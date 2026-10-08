@@ -475,6 +475,11 @@ def _original_image_response(path: Path) -> FileResponse:
 def _browser_app() -> FastAPI:
     app = FastAPI(title="Archival organizer browser", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots() -> FileResponse:
+        return FileResponse(WEB_DIR / "static" / "robots.txt", media_type="text/plain")
+
     return app
 
 
