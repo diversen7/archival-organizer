@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "macros.html" import field, review_form, section_link, breadcrumb, folder_list, image_viewer %}
+
+{% block title %}Page {{ page_number }} · Archive browser{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside>
+    <div class="brand">Archive browser</div>
+    <div class="brand-tagline">Building better archives</div>
+    <p class="run-meta">{{ run.page_count }} pages in {{ run.sections | length }} sections</p>
+    <input
+      id="filter"
+      type="search"
+      placeholder="Filter sections…"
+      aria-label="Filter sections"
+      data-filter-target=".section"
+    >
+    <nav id="sections">
+      {% for item in run.sections %}
+        {{ section_link(item, section_number, base_url) }}
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <main data-previous-url="{{ previous_url or '' }}" data-next-url="{{ next_url or '' }}">
+    {% if breadcrumbs %}{{ breadcrumb(breadcrumbs) }}{% endif %}
+    {% if children %}
+      <details class="child-folders" data-disclosure="subfolders" open>
+        <summary>Subfolders</summary>
+        {{ folder_list(children) }}
+      </details>
+    {% endif %}
+    <div class="crumb">
+      Section <strong>{{ section_number }}</strong> · {{ section.label | display_value }}
+    </div>
+
+    <div class="page-content" id="page-strip">
+      <div class="page-strip" aria-label="Pages in this section">
+        {% for number in section_pages %}
+          <a class="page-pill{% if number == page_number %} active{% endif %}" href="{{ base_url }}/?page={{ number }}#page-strip">{{ number }}</a>
+        {% endfor %}
+      </div>
+
+      <div class="viewer">
+        {{ image_viewer(image_url, original_url, page_number, previous_url, next_url) }}
+
+        <div>
+          {% include "browser_controls.html" %}
+          {% if run.review_warnings %}
+            <section class="card review-controls" role="status">
+              <h2>Review source changes</h2>
+              {% for warning in run.review_warnings %}<p>{{ warning }}</p>{% endfor %}
+            </section>
+          {% endif %}
+          <section class="card review-controls">
+            <h2>Correct grouping</h2>
+            <p>Adjust document boundaries within this collection. Original AI results are preserved.</p>
+            <div class="review-actions">
+              {% for action in review_actions %}
+                {{ review_form(action.url, action.label, action.secondary) }}
+              {% endfor %}
+            </div>
+            {% if run.page_count > 1 %}
+              <form class="move-page-form" method="post" action="{{ move_url }}">
+                <label for="target-page">Move this page after page</label>
+                <input
+                  id="target-page"
+                  name="target_page"
+                  type="number"
+                  min="1"
+                  max="{{ run.page_count }}"
+                  required
+                >
+                <button type="submit">Move page</button>
+              </form>
+            {% endif %}
+            {% if section.review_adjusted and section.label_needs_review %}
+              <p class="review-note">This section's grouping or page information has changed. Its label and metadata should be checked.</p>
+            {% elif section.label_source == "regenerated" %}
+              <p class="review-note regenerated">This section's label and metadata were regenerated for its reviewed page grouping.</p>
+            {% endif %}
+          </section>
+
+          <section class="card">
+            <h2>Extracted information</h2>
+            <span class="confidence">{{ confidence_label }} extraction confidence</span>
+            <div class="filename">Page {{ page_number }} · {{ page.file }}</div>
+            <details data-disclosure="basic-information" open>
+              <summary>Basic information</summary>
+              <dl class="fields">
+                {% for item in metadata %}{{ field(item.label, item.value, item.label in ["Title", "Summary"]) }}{% endfor %}
+              </dl>
+            </details>
+            <details data-disclosure="beginning-ending-text">
+              <summary>Beginning and ending text</summary>
+              <dl class="fields">
+                {{ field("Beginning", page.beginning_text, true) }}
+                {{ field("Ending", page.ending_text, true) }}
+              </dl>
+            </details>
+            <details data-disclosure="visual-layout-description">
+              <summary>Visual and layout description</summary>
+              <dl class="fields">
+                {{ field("Visual description", page.visual_description, true) }}
+                {{ field("Layout signature", page.layout_signature, true) }}
+              </dl>
+            </details>
+            <details data-disclosure="full-transcription" open>
+              <summary>Full transcription</summary>
+              <pre>{{ page.transcription | display_value }}</pre>
+            </details>
+          </section>
+
+          {% if boundary %}
+            <section class="card">
+              <h2>Grouping decision</h2>
+              <dl class="fields">
+                {{ field("Decision", boundary.decision) }}
+                {{ field("Confidence", boundary.confidence_label) }}
+                {{ field("Reason", boundary.reason, true) }}
+              </dl>
+            </section>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

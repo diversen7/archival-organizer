@@ -1,0 +1,12 @@
+{% if browser_controls %}
+<div class="card browser-controls">
+  {% if browser_controls.preview_url %}
+    <nav class="view-switch" aria-label="Browser view">
+      <a href="{{ browser_controls.preview_url }}" title="Browse original scans without analysis."{% if browser_controls.mode == 'preview' %} aria-current="page"{% endif %}>Preview</a>
+      <a href="{{ browser_controls.analyzed_url }}" title="View extracted text, metadata, and document groupings."{% if browser_controls.mode == 'analyzed' %} aria-current="page"{% endif %}>Analyzed</a>
+    </nav>
+  {% else %}
+    <span class="preview-badge">{{ 'Preview' if browser_controls.mode == 'preview' else 'Analyzed' }}</span>
+  {% endif %}
+</div>
+{% endif %}

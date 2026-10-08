@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "macros.html" import breadcrumb, folder_list, image_viewer %}
+
+{% block title %}{{ filename }} · Preview{% endblock %}
+{% block body_class %}preview-page{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside>
+    <div class="brand">Archive browser</div>
+    <div class="brand-tagline">Preview · Original images</div>
+    <p class="run-meta">{{ page_count }} images in this folder</p>
+    <form class="image-jump" action="{{ folder_url }}" method="get">
+      <label for="image-number">Go to image</label>
+      <div>
+        <input id="image-number" name="page" type="number" min="1" max="{{ page_count }}" value="{{ page_number }}" required>
+        <button type="submit">Go</button>
+      </div>
+    </form>
+    <p class="run-meta">Images {{ list_start }}–{{ list_end }} of {{ page_count }}</p>
+    <nav id="sections" aria-label="Images">
+      {% for item in image_links %}
+        <a class="section image-link{% if item.number == page_number %} active{% endif %}" href="{{ item.url }}"{% if item.number == page_number %} aria-current="page"{% endif %}>
+          <span class="section-number">{{ item.number }}</span>
+          <strong>{{ item.name }}</strong>
+        </a>
+      {% endfor %}
+    </nav>
+    <nav class="image-list-pager" aria-label="Image list pagination">
+      {% if earlier_images_url %}<a href="{{ earlier_images_url }}">← Earlier images</a>{% endif %}
+      {% if later_images_url %}<a href="{{ later_images_url }}">Later images →</a>{% endif %}
+    </nav>
+  </aside>
+  <main data-previous-url="{{ previous_url or '' }}" data-next-url="{{ next_url or '' }}">
+    {{ breadcrumb(breadcrumbs) }}
+    {% if children %}
+      <details class="child-folders" data-disclosure="subfolders" open>
+        <summary>Subfolders</summary>
+        {{ folder_list(children) }}
+      </details>
+    {% endif %}
+    <div class="page-content" id="preview-image">
+      <div class="filename">Image {{ page_number }} of {{ page_count }} · {{ filename }}</div>
+      <div class="viewer">
+        {{ image_viewer(image_url, original_url, page_number, previous_url, next_url) }}
+        <div>
+          {% include "browser_controls.html" %}
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

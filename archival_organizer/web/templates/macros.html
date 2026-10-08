@@ -1,0 +1,66 @@
+{% macro field(label, value, wide=false) -%}
+<div class="field{% if wide %} wide{% endif %}">
+  <dt>{{ label }}</dt>
+  <dd>{{ value | display_value }}</dd>
+</div>
+{%- endmacro %}
+
+{% macro section_link(item, current_section, base_url) -%}
+{% set label_review = item.label_needs_review or item.label_confidence | float < 0.75 %}
+{% set grouping_review = item.lowest_boundary_confidence | float < 0.75 %}
+<a
+  class="section{% if item.section == current_section %} active{% endif %}"
+  href="{{ base_url }}/?page={{ item.start_page }}"
+  data-search="{{ item.label.casefold() }}"
+>
+  <span class="section-number">{{ "%02d" | format(item.section) }}</span>
+  <span>
+    <strong>{{ item.label | display_value }}</strong>
+    <small>Pages {{ item.start_page }}–{{ item.end_page }} · {{ item.document_type | display_value }}</small>
+  </span>
+  <span class="section-status">
+    {% if item.review_adjusted %}<span class="adjusted">Adjusted</span>{% endif %}
+    {% if label_review %}<span class="review">Label review</span>{% endif %}
+    {% if grouping_review %}<span class="review">Grouping review</span>{% endif %}
+  </span>
+</a>
+{%- endmacro %}
+
+{% macro review_form(action, label, secondary=false) -%}
+<form method="post" action="{{ action }}">
+  <button{% if secondary %} class="secondary"{% endif %} type="submit">{{ label }}</button>
+</form>
+{%- endmacro %}
+
+{% macro breadcrumb(items) -%}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <ol>
+    {% for item in items %}
+      <li>{% if loop.last %}<span aria-current="page">{{ item.label }}</span>{% else %}<a href="{{ item.url }}">{{ item.label }}</a>{% endif %}</li>
+    {% endfor %}
+  </ol>
+</nav>
+{%- endmacro %}
+
+{% macro folder_list(children) -%}
+<div class="collection-list">
+  {% for child in children %}
+    <a class="collection" href="{{ child.url }}" data-search="{{ child.name.casefold() }}">
+      <strong>{{ child.name }}</strong>
+      <span>{{ child.page_count }} pages · {{ child.collection_count }} {{ 'collection' if child.collection_count == 1 else 'collections' }}</span>
+    </a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro image_viewer(image_url, original_url, page_number, previous_url, next_url) -%}
+<div>
+  <a class="image-card" href="{{ original_url }}" title="Open original image">
+    <img src="{{ image_url }}" alt="Scan of page {{ page_number }}">
+  </a>
+  <div class="pager">
+    {% if previous_url %}<a class="nav-button" href="{{ previous_url }}">← Previous</a>{% else %}<span></span>{% endif %}
+    {% if next_url %}<a class="nav-button" href="{{ next_url }}">Next →</a>{% else %}<span></span>{% endif %}
+  </div>
+</div>
+{%- endmacro %}

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Archive browser{% endblock %}</title>
+  <link rel="stylesheet" href="/static/archive.css?v={{ asset_version | urlencode }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% block body %}{% endblock %}
+  <script src="/static/archive.js?v={{ asset_version | urlencode }}" defer></script>
+</body>
+</html>

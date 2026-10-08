@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import breadcrumb, folder_list %}
+
+{% block title %}{{ folder_title }} · {{ 'Preview' if preview_mode else 'Archive browser' }}{% endblock %}
+{% block body_class %}collections-page{% endblock %}
+
+{% block body %}
+<main class="collections-main">
+  {{ breadcrumb(breadcrumbs) }}
+  {% include "browser_controls.html" %}
+  {% if preview_mode and not browser_controls %}<p><span class="preview-badge">Preview</span></p>{% endif %}
+  <h1>{{ folder_title }}</h1>
+  {% if notice %}
+    <div class="card browser-notice" role="status">
+      <p>{{ notice }}</p>
+      {% if browser_controls.preview_url and browser_controls.mode == 'analyzed' %}<a href="{{ browser_controls.preview_url }}">Back to Preview</a>{% endif %}
+      {% if analyzed_pages_url %}<a href="{{ analyzed_pages_url }}">Open analyzed pages in this folder</a>{% endif %}
+      {% if preview_pages_url %}<a href="{{ preview_pages_url }}">Open source images in this folder</a>{% endif %}
+    </div>
+  {% endif %}
+  {% if children %}
+  <p>Choose a folder to explore its collections.</p>
+  <input
+    id="filter"
+    type="search"
+    placeholder="Filter folders…"
+    aria-label="Filter folders"
+    data-filter-target=".collection"
+  >
+  {{ folder_list(children) }}
+  {% elif not notice %}
+    <p>{{ 'No source images in this folder.' if preview_mode else 'No completed collections in this folder.' }}</p>
+  {% endif %}
+</main>
+{% endblock %}
