@@ -19,6 +19,16 @@ def test_cli_uses_analyze_and_relabel_subcommands():
     assert relabel.command == "relabel"
     assert relabel.collection == ["box/folder"]
     assert relabel.dry_run is True
+    assert cli.parse_args(["relabel", "/archive", "--name", "Alice"]).name == "Alice"
+
+
+def test_relabel_requires_reviewer_name_before_requests(collection_archive):
+    _source, output, _calls, run = collection_archive
+    run("--collection", "dir1")
+    collection_id = hashlib.sha256(b"dir1").hexdigest()[:12]
+    cli.storage.set_boundary_override(output, collection_id, 2, True)
+    with pytest.raises(SystemExit, match="Provide --name"):
+        cli._run_relabel(cli.parse_args(["relabel", str(output)]))
 
 
 @pytest.fixture

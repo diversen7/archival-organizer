@@ -137,6 +137,62 @@ def test_v7_upgrade_rolls_back_on_failure(version_four_archive, monkeypatch):
     assert _dump(output) == before
 
 
+def test_v8_history_import_preserves_existing_edits(version_four_archive):
+    output = version_four_archive
+    with storage.connect(output) as database:
+        for version in (4, 5, 6):
+            for statement in migrations.MIGRATIONS[version]:
+                database.execute(statement)
+        database.execute("UPDATE metadata SET value = '7' WHERE key = 'schema_version'")
+    storage.set_document_flag(output, "default", [1], True)
+    storage.move_page_after(output, "default", 1, 2)
+    before = storage.load_collection_data(output, "default")
+    flags = storage.load_document_flags(output, "default")
+    storage.initialize(output)
+    entries = storage.load_edit_history(output, "default")
+    assert len(entries) == 1
+    assert entries[0]["reviewer_name"] == "John Doe"
+    assert entries[0]["imported"] == 1
+    assert entries[0]["recorded_at"]
+    snapshot = entries[0]["details"]
+    assert snapshot["flags"][0]["page_id"] == 1
+    assert snapshot["labels"][0]["label"] == "Reviewed"
+    assert [page["page_id"] for page in snapshot["page_order"]] == [2, 1]
+    assert len(snapshot["undo_snapshots"]) == 2
+    assert storage.load_collection_data(output, "default") == before
+    assert storage.load_document_flags(output, "default") == flags
+    storage.initialize(output)
+    assert storage.load_edit_history(output, "default") == entries
+
+
+def test_v8_migration_rolls_back_history_and_existing_data(version_four_archive, monkeypatch):
+    output = version_four_archive
+    with storage.connect(output) as database:
+        for version in (4, 5, 6):
+            for statement in migrations.MIGRATIONS[version]:
+                database.execute(statement)
+        database.execute("UPDATE metadata SET value = '7' WHERE key = 'schema_version'")
+    before = _dump(output)
+    monkeypatch.setitem(migrations.MIGRATIONS, 7, migrations.MIGRATIONS[7] + (
+        "UPDATE page_analyses SET result_json = '{}'", "INSERT INTO nonexistent_table VALUES (1)",
+    ))
+    with pytest.raises(sqlite3.OperationalError, match="nonexistent_table"):
+        storage.initialize(output)
+    assert _dump(output) == before
+
+
+def test_edit_and_history_write_roll_back_together(version_four_archive):
+    output = version_four_archive
+    storage.initialize(output)
+    with storage.connect(output) as database:
+        database.execute("""CREATE TRIGGER reject_history BEFORE INSERT ON edit_history
+            BEGIN SELECT RAISE(ABORT, 'history write failed'); END""")
+    before = _dump(output)
+    with pytest.raises(sqlite3.IntegrityError, match="history write failed"):
+        storage.set_boundary_override(output, "default", 2, False, "Alice")
+    assert _dump(output) == before
+
+
 def test_upgrade_preserves_archive_and_only_runs_once(version_four_archive, monkeypatch):
     output = version_four_archive
     before = storage.load_collection_data(output, "default")

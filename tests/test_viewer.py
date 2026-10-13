@@ -192,18 +192,44 @@ def test_grouping_buttons_remain_visible_with_correct_disabled_state(tmp_path: P
     assert 'type="submit" disabled>Split before this page</button>' in _render_page(split, 2)
 
 
+def test_review_edits_require_name_and_keep_chronological_history(tmp_path: Path):
+    output = _sample_run(tmp_path)
+    before = storage.load_collection_data(output, "default")
+    initial = storage.load_edit_history(output, "default")
+    with TestClient(create_app(output)) as client:
+        assert client.get("/archive/").status_code == 200
+        for endpoint in ("pages/1/flag", "pages/1/unflag", "pages/1/move", "boundaries/2/split", "boundaries/2/join", "undo"):
+            response = client.post(f"/collections/default/review/{endpoint}", data={"target_page": "2"})
+            assert response.status_code == 400
+        assert storage.load_collection_data(output, "default") == before
+        assert storage.load_edit_history(output, "default") == initial
+        assert client.post("/collections/default/review/pages/1/flag", data={"reviewer_name": "  Alice <reviewer>  "}).status_code == 200
+        assert client.post("/collections/default/review/pages/1/unflag", data={"reviewer_name": "Bob"}).status_code == 200
+        assert client.post("/collections/default/review/boundaries/2/split", data={"reviewer_name": "Alice"}).status_code == 200
+        assert client.post("/collections/default/review/undo", data={"reviewer_name": "Bob"}).status_code == 200
+        edits = storage.load_edit_history(output, "default")
+        assert [edit["action"] for edit in edits] == ["undo", "split", "unflag", "flag"]
+        assert [edit["reviewer_name"] for edit in edits] == ["Bob", "Alice", "Bob", "Alice <reviewer>"]
+        assert all(edit["recorded_at"] and not edit["imported"] for edit in edits)
+        history = client.get("/collections/default/history")
+        assert history.status_code == 200
+        assert "Alice &lt;reviewer&gt;" in history.text
+        assert history.text.index("Undid last grouping adjustment") < history.text.index("Flagged document")
+    assert len(storage.load_edit_history(output, "default")) == 4
+
+
 def test_document_flags_persist_and_can_be_removed_from_any_page(tmp_path: Path):
     output = _sample_run(tmp_path)
     original = load_run(output)
     app = create_app(output)
     with TestClient(app) as client:
-        response = client.post("/collections/default/review/pages/2/flag", follow_redirects=False)
+        response = client.post("/collections/default/review/pages/2/flag", headers={"X-Reviewer-Name": "Test Reviewer"}, follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == "/archive/?page=2"
         assert "Remove flag" in client.get("/archive/?page=1").text
         assert '<span class="flagged">Flagged</span>' in client.get("/archive/?page=2").text
-        assert client.post("/collections/default/review/pages/999/flag").status_code == 404
-        assert client.post("/collections/missing/review/pages/1/flag").status_code == 404
+        assert client.post("/collections/default/review/pages/999/flag", headers={"X-Reviewer-Name": "Test Reviewer"}).status_code == 404
+        assert client.post("/collections/missing/review/pages/1/flag", headers={"X-Reviewer-Name": "Test Reviewer"}).status_code == 404
     flagged = load_run(output)
     assert flagged.sections[0]["flagged"]
     assert not flagged.can_undo
@@ -214,9 +240,26 @@ def test_document_flags_persist_and_can_be_removed_from_any_page(tmp_path: Path)
     assert load_run(output).sections[0]["flagged"]
     with TestClient(create_app(output)) as client:
         assert "Remove flag" in client.get("/archive/").text
-        assert client.post("/collections/default/review/pages/1/unflag").status_code == 200
+        assert client.post("/collections/default/review/pages/1/unflag", headers={"X-Reviewer-Name": "Test Reviewer"}).status_code == 200
         assert "Remove flag" not in client.get("/archive/").text
     assert not load_run(output).sections[0]["flagged"]
+
+
+def test_named_move_label_and_join_are_audited_and_collection_scoped(tmp_path: Path):
+    output = _move_sample_run(tmp_path)
+    _add_sample_collection(output, tmp_path / "other", "other", "other")
+    original = load_run(output, collection_id="default")
+    moved = _move_page(output, original.input_dir, 2, 4, "default", "Alice")
+    _change_boundary(output, moved.input_dir, 2, False, "default", "Bob")
+    storage.save_reviewed_label(output, "default", [int(original.pages[1]["page_id"])], {
+        "label": "New label", "document_type": "letter", "summary": "Review summary",
+        "date": "", "places": [], "subjects": [], "confidence": 1.0,
+    }, "Carol")
+    history = storage.load_edit_history(output, "default")
+    assert [item["action"] for item in history] == ["label", "join", "move"]
+    assert [item["reviewer_name"] for item in history] == ["Carol", "Bob", "Alice"]
+    assert history[-1]["details"]["before"] != history[-1]["details"]["after"]
+    assert storage.load_edit_history(output, "other") == []
 
 
 def test_document_flag_follows_anchor_through_grouping_changes(tmp_path: Path):
@@ -366,7 +409,7 @@ def test_move_page_form_and_route(tmp_path: Path):
         )
 
         response = client.post(
-            "/collections/default/review/pages/2/move",
+            "/collections/default/review/pages/2/move", headers={"X-Reviewer-Name": "Test Reviewer"},
             data={"target_page": "4"},
             follow_redirects=False,
         )
@@ -529,17 +572,17 @@ def test_readable_paths_handle_special_characters_and_review_actions(tmp_path: P
         assert client.get("/collections/special/images/1").headers["content-type"] == "image/jpeg"
         for action in ("split", "join"):
             response = client.post(
-                f"/collections/special/review/boundaries/2/{action}", follow_redirects=False,
+                f"/collections/special/review/boundaries/2/{action}", headers={"X-Reviewer-Name": "Test Reviewer"}, follow_redirects=False,
             )
             assert response.headers["location"] == url + "?page=2"
             assert client.get(response.headers["location"]).status_code == 200
         moved = client.post(
-            "/collections/special/review/pages/1/move", data={"target_page": "2"},
+            "/collections/special/review/pages/1/move", headers={"X-Reviewer-Name": "Test Reviewer"}, data={"target_page": "2"},
             follow_redirects=False,
         )
         assert moved.headers["location"] == url + "?page=2"
         assert load_run(output, collection_id="special").pages[1]["file"] == "page 2.png"
-        undo = client.post("/collections/special/review/undo?page=2", follow_redirects=False)
+        undo = client.post("/collections/special/review/undo?page=2", headers={"X-Reviewer-Name": "Test Reviewer"}, follow_redirects=False)
         assert undo.headers["location"] == url + "?page=2"
         assert load_run(output, collection_id="special").pages[1]["file"] == "page 1.png"
         assert not load_run(output, collection_id="other").boundary_overrides

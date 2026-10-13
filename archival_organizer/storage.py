@@ -652,16 +652,57 @@ def load_collection_data(output_dir: Path, collection_id: str) -> dict[str, Any]
     }
 
 
+def _append_edit(
+    database: sqlite3.Connection, collection_id: str, reviewer_name: str,
+    action: str, summary: str, details: dict[str, Any],
+) -> None:
+    # Legacy archives are still readable by migration tests before initialization.
+    if database.execute("SELECT 1 FROM sqlite_master WHERE name = 'edit_history'").fetchone() is None:
+        return
+    reviewer_name = reviewer_name.strip()
+    if not reviewer_name or len(reviewer_name) > 100:
+        raise ValueError("Enter a reviewer name (1–100 characters) before making edits")
+    database.execute(
+        """INSERT INTO edit_history(
+            collection_id, reviewer_name, action, summary, details_json, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?)""",
+        (collection_id, reviewer_name, action, summary, json.dumps(details, ensure_ascii=False), _now()),
+    )
+
+
+def load_edit_history(output_dir: Path, collection_id: str) -> list[dict[str, Any]]:
+    with connect(output_dir) as database:
+        return [dict(row, details=json.loads(row["details_json"])) for row in database.execute(
+            "SELECT * FROM edit_history WHERE collection_id = ? ORDER BY id DESC", (collection_id,)
+        )]
+
+
+def _review_snapshot(database: sqlite3.Connection, collection_id: str, run_id: int) -> dict[str, Any]:
+    return {
+        "page_order": _review_order(database, collection_id, run_id),
+        "boundaries": _boundary_override_state(database, collection_id),
+    }
+
+
+def _page_filename(database: sqlite3.Connection, page_id: int) -> str:
+    return str(database.execute("SELECT filename FROM pages WHERE id = ?", (page_id,)).fetchone()[0])
+
+
 def save_reviewed_label(
     output_dir: Path,
     collection_id: str,
     page_ids: list[int],
     label: dict[str, Any],
+    reviewer_name: str = "John Doe",
 ) -> None:
     """Save generated metadata for one exact, ordered reviewed page group."""
     if not page_ids:
         raise ValueError("A reviewed label must contain at least one page")
     with connect(output_dir) as database:
+        previous = database.execute(
+            "SELECT * FROM reviewed_labels WHERE collection_id = ? AND page_ids_json = ?",
+            (collection_id, json.dumps(page_ids, separators=(",", ":"))),
+        ).fetchone()
         database.execute(
             """INSERT INTO reviewed_labels(
                 collection_id, page_ids_json, label, document_type, summary, date,
@@ -689,6 +730,9 @@ def save_reviewed_label(
                 _now(),
             ),
         )
+        _append_edit(database, collection_id, reviewer_name, "label",
+                     f"Regenerated label for {_page_filename(database, page_ids[0])}: {label['label']}",
+                     {"page_ids": page_ids, "before": dict(previous) if previous else None, "after": label})
 
 
 def load_document_flags(output_dir: Path, collection_id: str) -> set[int]:
@@ -700,6 +744,7 @@ def load_document_flags(output_dir: Path, collection_id: str) -> set[int]:
 
 def set_document_flag(
     output_dir: Path, collection_id: str, page_ids: list[int], flagged: bool,
+    reviewer_name: str = "John Doe",
 ) -> None:
     """Anchor a bookmark to the first page; clearing removes all anchors in the group."""
     if not page_ids:
@@ -711,6 +756,9 @@ def set_document_flag(
                 (page_id, collection_id),
             ).fetchone() is None:
                 raise ValueError("Flagged page does not belong to this collection")
+        before = [int(row[0]) for row in database.execute(
+            "SELECT page_id FROM document_flags WHERE collection_id = ?", (collection_id,)
+        )]
         if flagged:
             database.execute(
                 "INSERT OR IGNORE INTO document_flags VALUES (?, ?, ?)",
@@ -721,10 +769,19 @@ def set_document_flag(
                 "DELETE FROM document_flags WHERE collection_id = ? AND page_id = ?",
                 [(collection_id, page_id) for page_id in page_ids],
             )
+        after = [int(row[0]) for row in database.execute(
+            "SELECT page_id FROM document_flags WHERE collection_id = ?", (collection_id,)
+        )]
+        if set(before) != set(after):
+            _append_edit(database, collection_id, reviewer_name, "flag" if flagged else "unflag",
+                         f"{'Flagged' if flagged else 'Removed flag from'} document starting at "
+                         f"{_page_filename(database, page_ids[0])}",
+                         {"page_ids": page_ids, "before": before, "after": after})
 
 
 def set_boundary_override(
-    output_dir: Path, collection_id: str, right_position: int, decision: bool
+    output_dir: Path, collection_id: str, right_position: int, decision: bool,
+    reviewer_name: str = "John Doe",
 ) -> None:
     with connect(output_dir) as database:
         run_id = _latest_completed_run(database, collection_id)
@@ -734,6 +791,7 @@ def set_boundary_override(
         if right_position < 2 or right_position > len(order):
             raise ValueError("Boundary does not exist")
         left_page_id, right_page_id = order[right_position - 2:right_position]
+        before = _review_snapshot(database, collection_id, run_id)
         _record_review_history(database, collection_id)
         database.execute(
             """INSERT INTO boundary_overrides(
@@ -743,10 +801,15 @@ def set_boundary_override(
                 decision = excluded.decision, reviewed_at = excluded.reviewed_at""",
             (collection_id, left_page_id, right_page_id, int(decision), _now()),
         )
+        _append_edit(database, collection_id, reviewer_name, "split" if decision else "join",
+                     f"{'Split before' if decision else 'Joined before'} "
+                     f"{_page_filename(database, right_page_id)} (page {right_position})",
+                     {"before": before, "after": _review_snapshot(database, collection_id, run_id)})
 
 
 def move_page_after(
-    output_dir: Path, collection_id: str, page_position: int, target_position: int
+    output_dir: Path, collection_id: str, page_position: int, target_position: int,
+    reviewer_name: str = "John Doe",
 ) -> None:
     """Move one reviewed page after another and attach it to the target's section."""
     with connect(output_dir) as database:
@@ -760,6 +823,7 @@ def move_page_after(
             raise ValueError("A page cannot be moved after itself")
         moving_id = order[page_position - 1]
         target_id = order[target_position - 1]
+        before = _review_snapshot(database, collection_id, run_id)
         original_decisions = {
             (int(row["left_page_id"]), int(row["right_page_id"])): bool(
                 row["starts_new_document"]
@@ -813,9 +877,12 @@ def move_page_after(
                 if decision != original_decisions.get((left, right), True)
             ],
         )
+        _append_edit(database, collection_id, reviewer_name, "move",
+                     f"Moved {_page_filename(database, moving_id)} after {_page_filename(database, target_id)}",
+                     {"before": before, "after": _review_snapshot(database, collection_id, run_id)})
 
 
-def undo_boundary_override(output_dir: Path, collection_id: str) -> bool:
+def undo_boundary_override(output_dir: Path, collection_id: str, reviewer_name: str = "John Doe") -> bool:
     with connect(output_dir) as database:
         run_id = _latest_completed_run(database, collection_id)
         if run_id is None:
@@ -827,6 +894,7 @@ def undo_boundary_override(output_dir: Path, collection_id: str) -> bool:
         ).fetchone()
         if event is None:
             return False
+        before = _review_snapshot(database, collection_id, run_id)
         database.execute("DELETE FROM review_page_order WHERE collection_id = ?", (collection_id,))
         page_order = json.loads(event["page_order_json"])
         database.executemany(
@@ -852,4 +920,7 @@ def undo_boundary_override(output_dir: Path, collection_id: str) -> bool:
             ],
         )
         database.execute("DELETE FROM review_history WHERE id = ?", (int(event["id"]),))
+        _append_edit(database, collection_id, reviewer_name, "undo", "Undid last grouping adjustment",
+                     {"undo_snapshot_id": int(event["id"]), "before": before,
+                      "after": _review_snapshot(database, collection_id, run_id)})
         return True

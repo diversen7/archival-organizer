@@ -40,6 +40,32 @@ if (activeSection) {
 }
 
 const page = document.querySelector("main[data-previous-url]");
+const reviewerInput = document.querySelector("#reviewer-name");
+
+if (reviewerInput) {
+  const reviewerKey = "archive-browser:reviewer-name";
+  const status = document.querySelector("#reviewer-status");
+  try { reviewerInput.value = localStorage.getItem(reviewerKey) || ""; } catch {}
+  const rememberReviewer = () => {
+    const name = reviewerInput.value.trim();
+    try { localStorage.setItem(reviewerKey, name); } catch {}
+    return name;
+  };
+  reviewerInput.addEventListener("change", rememberReviewer);
+  reviewerInput.closest(".review-controls").querySelectorAll("form[data-review-edit]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      const name = rememberReviewer();
+      if (!name || name.length > 100) {
+        event.preventDefault();
+        status.textContent = "Enter a reviewer name (1–100 characters) before making edits.";
+        reviewerInput.focus();
+        return;
+      }
+      form.querySelector('[name="reviewer_name"]').value = name;
+    });
+  });
+}
+
 const imagePopup = document.querySelector("#image-popup");
 
 if (imagePopup) {

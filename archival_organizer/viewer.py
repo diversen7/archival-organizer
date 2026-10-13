@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, quote, urlencode
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -188,21 +188,22 @@ def _change_boundary(
     right_page: int,
     starts_new_document: bool,
     collection_id: str | None = None,
+    reviewer_name: str = "John Doe",
 ) -> ArchiveRun:
     run = load_run(output_dir, input_dir, collection_id)
     if right_page not in run.original_boundaries:
         raise HTTPException(status_code=400, detail="Boundary does not exist")
-    storage.set_boundary_override(output_dir, run.collection_id, right_page, starts_new_document)
+    storage.set_boundary_override(output_dir, run.collection_id, right_page, starts_new_document, reviewer_name)
     updated = load_run(output_dir, input_dir, run.collection_id)
     _write_reviewed_outputs(updated)
     return updated
 
 
 def _undo_boundary_change(
-    output_dir: Path, input_dir: Path, collection_id: str | None = None
+    output_dir: Path, input_dir: Path, collection_id: str | None = None, reviewer_name: str = "John Doe",
 ) -> ArchiveRun:
     run = load_run(output_dir, input_dir, collection_id)
-    if not storage.undo_boundary_override(output_dir, run.collection_id):
+    if not storage.undo_boundary_override(output_dir, run.collection_id, reviewer_name):
         return run
     updated = load_run(output_dir, input_dir, run.collection_id)
     _write_reviewed_outputs(updated)
@@ -215,12 +216,13 @@ def _move_page(
     page_number: int,
     target_page: int,
     collection_id: str | None = None,
+    reviewer_name: str = "John Doe",
 ) -> ArchiveRun:
     run = load_run(output_dir, input_dir, collection_id)
     if page_number not in run.pages or target_page not in run.pages:
         raise HTTPException(status_code=400, detail="Page number does not exist")
     try:
-        storage.move_page_after(output_dir, run.collection_id, page_number, target_page)
+        storage.move_page_after(output_dir, run.collection_id, page_number, target_page, reviewer_name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     updated = load_run(output_dir, input_dir, run.collection_id)
@@ -326,6 +328,7 @@ def _page_context(
         "review_actions": review_actions,
         "flag_url": f"{content_url}/review/pages/{page_number}/{'unflag' if section['flagged'] else 'flag'}",
         "undo_url": f"{content_url}/review/undo?page={page_number}",
+        "history_url": f"{content_url}/history",
         "move_url": f"{content_url}/review/pages/{page_number}/move",
         "image_url": f"{content_url}/images/{page_number}",
         "original_url": (
@@ -534,13 +537,13 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
         )
 
     def update_collection(
-        collection_id: str, right_page: int | None, decision: bool | None
+        collection_id: str, right_page: int | None, decision: bool | None, reviewer_name: str,
     ) -> ArchiveCollection:
         with lock:
             collection = selected(collection_id)
             if right_page is None:
                 run = _undo_boundary_change(
-                    collection.run.output_dir, collection.run.input_dir, collection_id
+                    collection.run.output_dir, collection.run.input_dir, collection_id, reviewer_name
                 )
             else:
                 assert decision is not None
@@ -550,6 +553,7 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
                     right_page,
                     decision,
                     collection_id,
+                    reviewer_name,
                 )
             return remember(collection, run)
 
@@ -652,15 +656,35 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
     def collection_original_image(collection_id: str, page_number: int) -> FileResponse:
         return _original_response(selected(collection_id).run, page_number)
 
+    async def require_reviewer(request: Request) -> str:
+        values = parse_qs((await request.body()).decode("utf-8"))
+        name = values.get("reviewer_name", [request.headers.get("X-Reviewer-Name", "")])[0].strip()
+        if not name or len(name) > 100:
+            raise HTTPException(status_code=400, detail="Enter a reviewer name (1–100 characters) before making edits")
+        return name
+
+    @app.get("/collections/{collection_id}/history", response_class=HTMLResponse)
+    def collection_history(collection_id: str) -> str:
+        collection = selected(collection_id)
+        with storage.connect(collection.run.output_dir) as database:
+            filenames = {int(row["id"]): str(row["filename"]) for row in database.execute(
+                "SELECT id, filename FROM pages WHERE collection_id = ?", (collection_id,)
+            )}
+        return templates.get_template("history.html").render(
+            collection=collection, back_url=_archive_url(collection.relative_path),
+            edits=storage.load_edit_history(collection.run.output_dir, collection_id),
+            filenames=filenames,
+        )
+
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/split")
-    def collection_split(collection_id: str, right_page: int) -> RedirectResponse:
-        return page_redirect(update_collection(collection_id, right_page, True), right_page)
+    def collection_split(collection_id: str, right_page: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
+        return page_redirect(update_collection(collection_id, right_page, True, reviewer_name), right_page)
 
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/join")
-    def collection_join(collection_id: str, right_page: int) -> RedirectResponse:
-        return page_redirect(update_collection(collection_id, right_page, False), right_page)
+    def collection_join(collection_id: str, right_page: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
+        return page_redirect(update_collection(collection_id, right_page, False, reviewer_name), right_page)
 
-    def flag_collection_document(collection_id: str, page_number: int, flagged: bool) -> RedirectResponse:
+    def flag_collection_document(collection_id: str, page_number: int, flagged: bool, reviewer_name: str) -> RedirectResponse:
         with lock:
             collection = selected(collection_id)
             section = collection.run.page_sections.get(page_number)
@@ -670,19 +694,19 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
                 int(collection.run.pages[number]["page_id"])
                 for number in range(int(section["start_page"]), int(section["end_page"]) + 1)
             ]
-            storage.set_document_flag(collection.run.output_dir, collection_id, page_ids, flagged)
+            storage.set_document_flag(collection.run.output_dir, collection_id, page_ids, flagged, reviewer_name)
             run = load_run(collection.run.output_dir, collection.run.input_dir, collection_id)
             return page_redirect(remember(collection, run), page_number)
 
     @app.post("/collections/{collection_id}/review/pages/{page_number}/flag")
-    def collection_flag(collection_id: str, page_number: int) -> RedirectResponse:
-        return flag_collection_document(collection_id, page_number, True)
+    def collection_flag(collection_id: str, page_number: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
+        return flag_collection_document(collection_id, page_number, True, reviewer_name)
 
     @app.post("/collections/{collection_id}/review/pages/{page_number}/unflag")
-    def collection_unflag(collection_id: str, page_number: int) -> RedirectResponse:
-        return flag_collection_document(collection_id, page_number, False)
+    def collection_unflag(collection_id: str, page_number: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
+        return flag_collection_document(collection_id, page_number, False, reviewer_name)
 
-    def move_collection_page(collection_id: str, page_number: int, target_page: int) -> RedirectResponse:
+    def move_collection_page(collection_id: str, page_number: int, target_page: int, reviewer_name: str) -> RedirectResponse:
         with lock:
             collection = selected(collection_id)
             moving_page_id = int(collection.run.pages.get(page_number, {}).get("page_id", 0))
@@ -692,6 +716,7 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
                 page_number,
                 target_page,
                 collection_id,
+                reviewer_name,
             )
             updated = remember(collection, run)
             new_position = next(
@@ -703,20 +728,20 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
 
     @app.post("/collections/{collection_id}/review/pages/{page_number}/move")
     async def collection_move_page(
-        collection_id: str, page_number: int, request: Request
+        collection_id: str, page_number: int, request: Request, reviewer_name: str = Depends(require_reviewer),
     ) -> RedirectResponse:
         values = parse_qs((await request.body()).decode("utf-8"))
         try:
             target_page = int(values.get("target_page", [""])[0])
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Enter a valid page number") from exc
-        return await run_in_threadpool(move_collection_page, collection_id, page_number, target_page)
+        return await run_in_threadpool(move_collection_page, collection_id, page_number, target_page, reviewer_name)
 
     @app.post("/collections/{collection_id}/review/undo")
     def collection_undo(
-        collection_id: str, page: int = Query(default=1, ge=1)
+        collection_id: str, page: int = Query(default=1, ge=1), reviewer_name: str = Depends(require_reviewer),
     ) -> RedirectResponse:
-        collection = update_collection(collection_id, None, None)
+        collection = update_collection(collection_id, None, None, reviewer_name)
         return page_redirect(collection, page)
 
     return app

@@ -28,7 +28,8 @@
 {%- endmacro %}
 
 {% macro review_form(action, label, secondary=false, disabled=false) -%}
-<form method="post" action="{{ action }}">
+<form method="post" action="{{ action }}" data-review-edit>
+  <input type="hidden" name="reviewer_name">
   <button{% if secondary %} class="secondary"{% endif %} type="submit"{% if disabled %} disabled{% endif %}>{{ label }}</button>
 </form>
 {%- endmacro %}

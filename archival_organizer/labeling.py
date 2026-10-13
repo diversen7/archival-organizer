@@ -40,6 +40,7 @@ def regenerate_collection_labels(
     label_batch: int = 16,
     ai: Any | None = None,
     report: Callable[[str], None] = print,
+    reviewer_name: str = "John Doe",
 ) -> tuple[int, int]:
     """Regenerate metadata for selected reviewed groups and return requested/saved counts."""
     if label_batch < 1:
@@ -78,6 +79,7 @@ def regenerate_collection_labels(
                 collection_id,
                 [int(page["page_id"]) for page in group],
                 label,
+                reviewer_name,
             )
             saved += 1
             report(

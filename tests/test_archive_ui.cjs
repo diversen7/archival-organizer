@@ -163,3 +163,48 @@ test("image opens in a modal while modified clicks keep the original link", () =
   assert.equal(popup.open, false, "Clicking outside the scan closes the overlay");
   assert.equal(backCalls, 3, "Backdrop dismissal also restores page history");
 });
+
+test("reviewer name is remembered, required, and submitted with edits", () => {
+  const saved = new Map([["archive-browser:reviewer-name", "Alice"]]);
+  let submit;
+  let onChange;
+  let focused = false;
+  const field = { value: "" };
+  const status = { textContent: "" };
+  const form = {
+    addEventListener(_event, callback) { submit = callback; },
+    querySelector: () => field,
+  };
+  const input = {
+    value: "",
+    addEventListener(_event, callback) { onChange = callback; },
+    closest: () => ({ querySelectorAll: () => [form] }),
+    focus() { focused = true; },
+  };
+  runInNewContext(script, {
+    localStorage: {
+      getItem: (key) => saved.get(key),
+      setItem: (key, value) => saved.set(key, value),
+    },
+    document: {
+      querySelectorAll: () => [],
+      querySelector(selector) {
+        if (selector === "#reviewer-name") return input;
+        if (selector === "#reviewer-status") return status;
+        return null;
+      },
+    },
+  });
+  assert.equal(input.value, "Alice");
+  input.value = " Bob ";
+  onChange();
+  submit({ preventDefault() { assert.fail("Named edits should submit"); } });
+  assert.equal(field.value, "Bob");
+  assert.equal(saved.get("archive-browser:reviewer-name"), "Bob");
+  input.value = "  ";
+  let prevented = false;
+  submit({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(focused, true);
+  assert.match(status.textContent, /Enter a reviewer name/);
+});

@@ -123,6 +123,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     relabel.add_argument("output", type=Path, help="Completed output containing archive.sqlite3")
+    relabel.add_argument("--name", help="Reviewer name recorded with each regenerated label (required unless --dry-run)")
     relabel.add_argument(
         "--collection",
         action="append",
@@ -637,6 +638,9 @@ def _run_relabel(args: argparse.Namespace) -> None:
     if args.dry_run:
         print(f"Dry run: {total} section(s) would be regenerated.", flush=True)
         return
+    reviewer_name = (getattr(args, "name", None) or "").strip()
+    if not reviewer_name or len(reviewer_name) > 100:
+        raise SystemExit("Provide --name with a reviewer name (1–100 characters) before regenerating labels.")
     if not os.getenv("OPENAI_API_KEY"):
         raise SystemExit("Set OPENAI_API_KEY before regenerating section metadata.")
 
@@ -650,6 +654,7 @@ def _run_relabel(args: argparse.Namespace) -> None:
             all_reviewed=args.all_reviewed,
             model=args.model,
             label_batch=args.label_batch,
+            reviewer_name=reviewer_name,
             report=lambda message, path=collection["relative_path"]: print(
                 f"[{path}] {message}", flush=True
             ),

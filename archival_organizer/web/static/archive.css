@@ -102,7 +102,16 @@ pre { white-space: pre-wrap; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo
 .review-actions button:disabled { background: #deddd5; color: var(--muted); border-color: var(--line); cursor: not-allowed; }
 .move-page-form { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
 .move-page-form label { display: block; margin-bottom: 8px; font-weight: 600; }
-.move-page-form input { width: 200px; max-width: 100%; height: 40px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 0; background: white; font: inherit; }
+.move-page-form input[type="number"] { width: 200px; max-width: 100%; height: 40px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 0; background: white; font: inherit; }
+.reviewer-name { margin-bottom: 12px; }
+.reviewer-name label, .reviewer-name span { display: block; }
+.reviewer-name input { width: 100%; padding: 8px; font: inherit; border: 1px solid var(--line); }
+.reviewer-name span { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.history-table { overflow-x: auto; }
+.edit-history table { width: 100%; border-collapse: collapse; }
+.edit-history th, .edit-history td { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.edit-history time { white-space: nowrap; }
+.imported-edit { color: var(--muted); font-size: 13px; }
 .move-page-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .review-controls .review-note { color: var(--warn); font-weight: 700; margin: 13px 0 0; }
 .review-controls .review-note.regenerated { color: var(--accent-strong); }

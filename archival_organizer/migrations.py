@@ -6,7 +6,7 @@ commit, or transaction-control statements inside migrations.
 """
 
 BASE_SCHEMA_VERSION = 4
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 BASE_SCHEMA = (
     """CREATE TABLE IF NOT EXISTS metadata (
@@ -187,5 +187,49 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
             flagged_at TEXT NOT NULL,
             PRIMARY KEY (collection_id, page_id)
         )""",
+    ),
+    7: (
+        """CREATE TABLE edit_history (
+            id INTEGER PRIMARY KEY,
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            reviewer_name TEXT NOT NULL CHECK (length(trim(reviewer_name)) > 0),
+            action TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            details_json TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            imported INTEGER NOT NULL DEFAULT 0 CHECK (imported IN (0, 1))
+        )""",
+        """CREATE INDEX edit_history_collection ON edit_history(collection_id, id DESC)""",
+        """INSERT INTO edit_history(
+            collection_id, reviewer_name, action, summary, details_json, recorded_at, imported
+        ) SELECT c.id, 'John Doe', 'existing_state', 'Existing saved edits at history activation',
+            json_object(
+                'boundaries', json((SELECT json_group_array(json_object(
+                    'left_page_id', left_page_id, 'right_page_id', right_page_id,
+                    'decision', decision, 'reviewed_at', reviewed_at
+                )) FROM boundary_overrides WHERE collection_id = c.id)),
+                'page_order', json((SELECT json_group_array(json_object(
+                    'page_id', page_id, 'position', position
+                )) FROM (SELECT page_id, position FROM review_page_order
+                    WHERE collection_id = c.id ORDER BY position))),
+                'labels', json((SELECT json_group_array(json_object(
+                    'page_ids', json(page_ids_json), 'label', label, 'document_type', document_type,
+                    'summary', summary, 'date', date, 'places', json(places_json),
+                    'subjects', json(subjects_json), 'confidence', confidence, 'reviewed_at', reviewed_at
+                )) FROM reviewed_labels WHERE collection_id = c.id)),
+                'flags', json((SELECT json_group_array(json_object(
+                    'page_id', page_id, 'flagged_at', flagged_at
+                )) FROM document_flags WHERE collection_id = c.id)),
+                'undo_snapshots', json((SELECT json_group_array(json_object(
+                    'id', id, 'page_order', json(page_order_json),
+                    'boundaries', json(boundary_overrides_json), 'created_at', created_at
+                )) FROM review_history WHERE collection_id = c.id))
+            ), strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now'), 1
+        FROM collections c WHERE
+            EXISTS (SELECT 1 FROM boundary_overrides WHERE collection_id = c.id) OR
+            EXISTS (SELECT 1 FROM review_page_order WHERE collection_id = c.id) OR
+            EXISTS (SELECT 1 FROM reviewed_labels WHERE collection_id = c.id) OR
+            EXISTS (SELECT 1 FROM document_flags WHERE collection_id = c.id) OR
+            EXISTS (SELECT 1 FROM review_history WHERE collection_id = c.id)""",
     ),
 }

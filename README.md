@@ -109,7 +109,7 @@ its surrounding batch and focused review. Labels are reused for documents with t
 independently of their absolute page numbers. Changing one collection does not reopen other completed
 collections. Stage records retain the model that actually produced each reused result.
 
-Existing version 4, 5, or 6 archives upgrade transactionally to version 7. On the first analysis command,
+Existing version 4–7 archives upgrade transactionally to version 8. On the first analysis command,
 completed collections with the same ordered filenames gain fingerprints of their current images and
 are skipped, without any model requests. This establishes a baseline under the assumption that their
 images have not changed since analysis; it cannot detect replacements made before fingerprints existed.
@@ -255,6 +255,17 @@ Flags persist across restarts and analyses. A flag follows the document’s firs
 are moved or documents split or join; removing a flag clears all flag markers in the current document.
 Flags are independent of grouping corrections and their Undo history.
 
+Enter a **Reviewer name** in **Correct grouping** before making edits. The browser remembers it
+on this device; edit the field to change the name for subsequent changes. Browsing does not require
+a name. The server also requires a name for every edit request (the `reviewer_name` form field,
+or the `X-Reviewer-Name` header for API clients).
+
+Open **Collection edits** to see the named, timestamped history of boundary corrections, page moves,
+flags, flag removals, regenerated labels, and Undo. History is written transactionally with each
+change and remains after a change is undone. Version 8 imports existing saved review state under
+**John Doe**, with the migration timestamp, preserving original timestamps inside the snapshot.
+Imported entries are marked explicitly; earlier removed flags and undone changes cannot be recovered.
+
 The browser opens at `/archive/` and follows the archive's folder hierarchy. A folder such as
 `91+01011-3` appears as a top-level entry even if its images are all in child collections. Click through
 folders to reach a collection; folder lists can be filtered by name and show totals for completed
@@ -286,7 +297,7 @@ After reorganizing pages, preview and then regenerate changed section metadata f
 
 ```bash
 uv run archival-organizer relabel output/sample-scans --dry-run
-uv run archival-organizer relabel output/sample-scans
+uv run archival-organizer relabel output/sample-scans --name "Dennis"
 ```
 
 `relabel` sends only adjusted groups whose current membership lacks a reviewed label to the labelling model;

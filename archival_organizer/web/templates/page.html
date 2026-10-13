@@ -56,6 +56,12 @@
           <section class="card review-controls">
             <h2>Correct grouping</h2>
             <p>Adjust document boundaries within this collection. Original AI results are preserved.</p>
+            <div class="reviewer-name">
+              <label for="reviewer-name">Reviewer name</label>
+              <input id="reviewer-name" type="text" maxlength="100" autocomplete="name" placeholder="Enter your name to edit" aria-describedby="reviewer-status">
+              <span id="reviewer-status" role="status">Enter or change the name used for new edits.</span>
+            </div>
+            <p><a href="{{ history_url }}">Collection edits</a></p>
             <div class="review-actions review-row flag-actions">
               {{ review_form(flag_url, 'Remove flag' if section.flagged else 'Flag') }}
               {{ review_form(undo_url, 'Undo last adjustment', true, not run.can_undo) }}
@@ -71,7 +77,8 @@
               {% endif %}
             {% endfor %}
             {% if run.page_count > 1 %}
-              <form class="move-page-form" method="post" action="{{ move_url }}">
+              <form class="move-page-form" method="post" action="{{ move_url }}" data-review-edit>
+                <input type="hidden" name="reviewer_name">
                 <label for="target-page">Move this page after page</label>
                 <div class="review-actions review-row">
                   <input
