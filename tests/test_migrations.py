@@ -102,6 +102,41 @@ def test_real_v6_migration_rolls_back_on_failure(version_four_archive, monkeypat
     assert _dump(output) == before
 
 
+def test_v7_upgrade_preserves_existing_analysis_and_review_state(version_four_archive):
+    output = version_four_archive
+    with storage.connect(output) as database:
+        for source_version in (4, 5):
+            for statement in migrations.MIGRATIONS[source_version]:
+                database.execute(statement)
+        database.execute("UPDATE metadata SET value = '6' WHERE key = 'schema_version'")
+    before = storage.load_collection_data(output, "default")
+    storage.initialize(output)
+    assert storage.load_collection_data(output, "default") == before
+    storage.set_document_flag(output, "default", [1], True)
+    storage.initialize(output)
+    assert storage.load_document_flags(output, "default") == {1}
+    assert storage.load_collection_data(output, "default") == before
+    with storage.connect(output) as database:
+        assert database.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_v7_upgrade_rolls_back_on_failure(version_four_archive, monkeypatch):
+    output = version_four_archive
+    with storage.connect(output) as database:
+        for source_version in (4, 5):
+            for statement in migrations.MIGRATIONS[source_version]:
+                database.execute(statement)
+        database.execute("UPDATE metadata SET value = '6' WHERE key = 'schema_version'")
+    before = _dump(output)
+    monkeypatch.setitem(migrations.MIGRATIONS, 6, migrations.MIGRATIONS[6] + (
+        "UPDATE page_analyses SET result_json = '{}'",
+        "INSERT INTO nonexistent_table VALUES (1)",
+    ))
+    with pytest.raises(sqlite3.OperationalError, match="nonexistent_table"):
+        storage.initialize(output)
+    assert _dump(output) == before
+
+
 def test_upgrade_preserves_archive_and_only_runs_once(version_four_archive, monkeypatch):
     output = version_four_archive
     before = storage.load_collection_data(output, "default")

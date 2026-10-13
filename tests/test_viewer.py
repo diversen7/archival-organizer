@@ -49,6 +49,7 @@ class FakeLabelAI:
 def _add_sample_collection(
     output: Path, images: Path, collection_id: str, relative_path: str = ".", *,
     label: str = "Test document",
+    prompts: dict[str, str] | None = None,
 ) -> None:
     images.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (40, 60), "white").save(images / "page 1.png")
@@ -61,7 +62,7 @@ def _add_sample_collection(
         collection_id,
         "test-model",
         "test-analysis",
-        {"page_analysis": "Analyze a page", "boundary": "Find boundaries"},
+        prompts if prompts is not None else {"page_analysis": "Analyze a page", "boundary": "Find boundaries"},
     )
     for number in (1, 2):
         storage.save_page_analysis(output, collection_id, run_id, {
@@ -136,6 +137,115 @@ def test_load_run_maps_pages_to_sections(tmp_path: Path):
     assert run.boundaries[2]["starts_new_document"] is False
 
 
+def test_viewer_shows_saved_prompts_safely(tmp_path: Path):
+    output = tmp_path / "output"
+    storage.initialize(output)
+    _add_sample_collection(output, tmp_path / "images", "default", prompts={
+        "page_analysis": "Historical instructions <script>alert('test')</script>\nKeep Danish: æøå",
+        "boundary": "Historical boundary\ninstructions\n\nAnother paragraph\ncontinues here.",
+        "boundary_review": "Historical review instructions",
+        "label": "Historical label instructions",
+    })
+    rendered = _render_page(load_run(output), 1)
+    assert '<section class="card" id="prompts-used">' in rendered
+    assert 'data-disclosure="prompts-used"' in rendered
+    assert 'id="show-prompts"' not in rendered
+    assert rendered.index('id="prompts-used"') > rendered.index("Extracted information")
+    assert "Historical instructions &lt;script&gt;" in rendered
+    assert "<script>alert" not in rendered
+    assert "Keep Danish: æøå" in rendered
+    assert '>Historical boundary instructions\n\nAnother paragraph continues here.</pre>' in rendered
+    assert 'data-prompt-text="Historical boundary\ninstructions\n\nAnother paragraph\ncontinues here."' in rendered
+    for title in ("Page analysis and transcription", "Document boundaries", "Boundary review", "Document labels"):
+        assert title in rendered
+    assert rendered.count('data-copy-prompt="') == 4
+    assert "Act as an archival document scanner" not in rendered
+
+
+def test_viewer_hides_prompts_when_none_saved(tmp_path: Path):
+    output = tmp_path / "output"
+    storage.initialize(output)
+    _add_sample_collection(output, tmp_path / "images", "default", prompts={})
+    rendered = _render_page(load_run(output), 1)
+    assert "Prompts used" not in rendered
+    assert 'id="prompts-used"' not in rendered
+
+
+def test_grouping_buttons_remain_visible_with_correct_disabled_state(tmp_path: Path):
+    output = _sample_run(tmp_path)
+    run = load_run(output)
+    first = _render_page(run, 1)
+    flag_row = first.split('class="review-actions review-row flag-actions">', 1)[1].split('</div>', 1)[0]
+    assert '>Flag</button>' in flag_row
+    assert 'type="submit" disabled>Undo last adjustment</button>' in flag_row
+    assert 'type="submit" disabled>Attach to previous</button>' in first
+    assert 'type="submit" disabled>Attach to next</button>' in first
+    assert 'type="submit" disabled>Split before this page</button>' in first
+    second = _render_page(run, 2)
+    assert 'type="submit">Split before this page</button>' in second
+    split = _change_boundary(output, run.input_dir, 2, True)
+    assert 'type="submit">Undo last adjustment</button>' in _render_page(split, 1)
+    assert 'type="submit">Attach to next</button>' in _render_page(split, 1)
+    assert 'type="submit" disabled>Attach to previous</button>' in _render_page(split, 1)
+    assert 'type="submit">Attach to previous</button>' in _render_page(split, 2)
+    assert 'type="submit" disabled>Attach to next</button>' in _render_page(split, 2)
+    assert 'type="submit" disabled>Split before this page</button>' in _render_page(split, 2)
+
+
+def test_document_flags_persist_and_can_be_removed_from_any_page(tmp_path: Path):
+    output = _sample_run(tmp_path)
+    original = load_run(output)
+    app = create_app(output)
+    with TestClient(app) as client:
+        response = client.post("/collections/default/review/pages/2/flag", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/archive/?page=2"
+        assert "Remove flag" in client.get("/archive/?page=1").text
+        assert '<span class="flagged">Flagged</span>' in client.get("/archive/?page=2").text
+        assert client.post("/collections/default/review/pages/999/flag").status_code == 404
+        assert client.post("/collections/missing/review/pages/1/flag").status_code == 404
+    flagged = load_run(output)
+    assert flagged.sections[0]["flagged"]
+    assert not flagged.can_undo
+    assert flagged.original_sections == original.original_sections
+    assert flagged.original_boundaries == original.original_boundaries
+    _add_sample_collection(output, tmp_path / "images", "default")
+    assert load_run(output).run_id != flagged.run_id
+    assert load_run(output).sections[0]["flagged"]
+    with TestClient(create_app(output)) as client:
+        assert "Remove flag" in client.get("/archive/").text
+        assert client.post("/collections/default/review/pages/1/unflag").status_code == 200
+        assert "Remove flag" not in client.get("/archive/").text
+    assert not load_run(output).sections[0]["flagged"]
+
+
+def test_document_flag_follows_anchor_through_grouping_changes(tmp_path: Path):
+    output = _sample_run(tmp_path)
+    run = load_run(output)
+    first_id = int(run.pages[1]["page_id"])
+    second_id = int(run.pages[2]["page_id"])
+    storage.set_document_flag(output, "default", [first_id, second_id], True)
+    split = _change_boundary(output, run.input_dir, 2, True)
+    assert [section["flagged"] for section in split.sections] == [True, False]
+    storage.set_document_flag(output, "default", [second_id], True)
+    joined = _change_boundary(output, run.input_dir, 2, False)
+    assert joined.sections[0]["flagged"]
+    storage.set_document_flag(output, "default", [first_id, second_id], False)
+    assert storage.load_document_flags(output, "default") == set()
+    assert not _undo_boundary_change(output, run.input_dir).sections[0]["flagged"]
+
+
+def test_document_flags_are_scoped_to_collection(tmp_path: Path):
+    output = _sample_run(tmp_path)
+    _add_sample_collection(output, tmp_path / "other", "other", "other")
+    run = load_run(output, collection_id="default")
+    page_id = int(run.pages[1]["page_id"])
+    with pytest.raises(ValueError, match="does not belong"):
+        storage.set_document_flag(output, "other", [page_id], True)
+    storage.set_document_flag(output, "default", [page_id], True)
+    assert not load_run(output, collection_id="other").sections[0]["flagged"]
+
+
 def test_viewer_renders_page_metadata_and_images(tmp_path: Path):
     output = _sample_run(tmp_path)
     run = load_run(output)
@@ -143,6 +253,8 @@ def test_viewer_renders_page_metadata_and_images(tmp_path: Path):
     assert "Test document" in rendered
     assert "Some &lt;visible&gt; text" in rendered
     assert "Continues previous page" in rendered
+    assert '<dialog id="image-popup" aria-label="Original scan of page 2">' in rendered
+    assert 'aria-label="Close image" title="Close image" autofocus>×</button>' in rendered
     assert "Label review" not in rendered
     assert "Grouping review" not in rendered
     assert 'id="page-strip"' in rendered

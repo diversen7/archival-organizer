@@ -1,0 +1,22 @@
+<section class="card" id="prompts-used">
+  <details data-disclosure="prompts-used">
+  <summary>Prompts used</summary>
+  <p>Saved instructions for this collection’s displayed analysis. Page evidence supplied with individual requests is not shown.</p>
+  {% set descriptions = {
+    'page_analysis': ('Page analysis and transcription', 'Extracts text and observable evidence from each scanned page.'),
+    'boundary': ('Document boundaries', 'Decides whether adjacent pages belong to the same document.'),
+    'boundary_review': ('Boundary review', 'Reconsiders questionable document splits.'),
+    'label': ('Document labels', 'Creates labels and summary metadata for grouped documents.')
+  } %}
+  {% for kind, prompt in run.prompts.items() %}
+    {% set description = descriptions.get(kind, (kind | replace('_', ' ') | title, 'Saved instructions for this analysis stage.')) %}
+    <details class="prompt-section">
+      <summary>{{ description[0] }}</summary>
+      <p>{{ description[1] }}</p>
+      <button type="button" data-copy-prompt="prompt-{{ loop.index }}" data-prompt-text="{{ prompt.content }}">Copy</button>
+      <span class="prompt-copy-status" role="status"></span>
+      <pre id="prompt-{{ loop.index }}">{% for paragraph in prompt.content.split('\n\n') %}{{ paragraph.split() | join(' ') }}{% if not loop.last %}{{ '\n\n' }}{% endif %}{% endfor %}</pre>
+    </details>
+  {% endfor %}
+  </details>
+</section>

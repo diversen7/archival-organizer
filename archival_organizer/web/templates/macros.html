@@ -19,6 +19,7 @@
     <small>Pages {{ item.start_page }}–{{ item.end_page }} · {{ item.document_type | display_value }}</small>
   </span>
   <span class="section-status">
+    {% if item.flagged %}<span class="flagged">Flagged</span>{% endif %}
     {% if item.review_adjusted %}<span class="adjusted">Adjusted</span>{% endif %}
     {% if label_review %}<span class="review">Label review</span>{% endif %}
     {% if grouping_review %}<span class="review">Grouping review</span>{% endif %}
@@ -26,9 +27,9 @@
 </a>
 {%- endmacro %}
 
-{% macro review_form(action, label, secondary=false) -%}
+{% macro review_form(action, label, secondary=false, disabled=false) -%}
 <form method="post" action="{{ action }}">
-  <button{% if secondary %} class="secondary"{% endif %} type="submit">{{ label }}</button>
+  <button{% if secondary %} class="secondary"{% endif %} type="submit"{% if disabled %} disabled{% endif %}>{{ label }}</button>
 </form>
 {%- endmacro %}
 
@@ -58,6 +59,10 @@
   <a class="image-card" href="{{ original_url }}" title="Open original image">
     <img src="{{ image_url }}" alt="Scan of page {{ page_number }}">
   </a>
+  <dialog id="image-popup" aria-label="Original scan of page {{ page_number }}">
+    <form method="dialog"><button class="image-popup-close" type="submit" aria-label="Close image" title="Close image" autofocus>×</button></form>
+    <img data-original-url="{{ original_url }}" alt="Original scan of page {{ page_number }}">
+  </dialog>
   <div class="pager">
     {% if previous_url %}<a class="nav-button" href="{{ previous_url }}">← Previous</a>{% else %}<span></span>{% endif %}
     {% if next_url %}<a class="nav-button" href="{{ next_url }}">Next →</a>{% else %}<span></span>{% endif %}

@@ -40,9 +40,63 @@ if (activeSection) {
 }
 
 const page = document.querySelector("main[data-previous-url]");
+const imagePopup = document.querySelector("#image-popup");
+
+if (imagePopup) {
+  const openImage = () => {
+    if (imagePopup.open) return;
+    const image = imagePopup.querySelector("img");
+    image.src = image.dataset.originalUrl;
+    imagePopup.showModal();
+  };
+  document.querySelector(".image-card").addEventListener("click", (event) => {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    if (imagePopup.open) return;
+    history.pushState({ ...history.state, archiveImagePopup: true }, "");
+    openImage();
+  });
+  window.addEventListener("popstate", () => {
+    if (history.state?.archiveImagePopup) {
+      openImage();
+    } else if (imagePopup.open) {
+      imagePopup.close();
+    }
+  });
+  imagePopup.addEventListener("close", () => {
+    if (history.state?.archiveImagePopup) history.back();
+  });
+  imagePopup.addEventListener("click", (event) => {
+    if (event.target === imagePopup) imagePopup.close();
+  });
+  if (history.state?.archiveImagePopup) openImage();
+}
+
+const promptsPanel = document.querySelector("#prompts-used");
+
+if (promptsPanel) {
+  promptsPanel.querySelectorAll("[data-copy-prompt]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const content = document.getElementById(button.dataset.copyPrompt);
+      const status = button.nextElementSibling;
+      try {
+        await navigator.clipboard.writeText(button.dataset.promptText ?? content.textContent);
+        status.textContent = "Copied";
+      } catch {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        status.textContent = "Text selected. Press Ctrl+C or ⌘C to copy.";
+      }
+    });
+  });
+}
 
 if (page) {
   document.addEventListener("keydown", (event) => {
+    if (imagePopup?.open) return;
     if (event.target.matches("input, textarea, select")) return;
     if (event.key === "ArrowLeft" && page.dataset.previousUrl) {
       location.href = page.dataset.previousUrl;

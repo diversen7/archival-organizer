@@ -109,7 +109,7 @@ its surrounding batch and focused review. Labels are reused for documents with t
 independently of their absolute page numbers. Changing one collection does not reopen other completed
 collections. Stage records retain the model that actually produced each reused result.
 
-Existing version 4 or 5 archives upgrade transactionally to version 6. On the first analysis command,
+Existing version 4, 5, or 6 archives upgrade transactionally to version 7. On the first analysis command,
 completed collections with the same ordered filenames gain fingerprints of their current images and
 are skipped, without any model requests. This establishes a baseline under the assumption that their
 images have not changed since analysis; it cannot detect replacements made before fingerprints existed.
@@ -239,8 +239,21 @@ Then open <http://127.0.0.1:8002>. The browser shows the source image beside all
 the full transcription, the grouping decision, and the section containing the page. Use the section list,
 page buttons, arrow buttons, or keyboard arrow keys to move through the run. Page navigation positions
 the page strip at the top of the view, above the image and review actions. Click an image to open the
-full-resolution original. Collapsible sections remember their open or closed state in this browser,
+full-resolution original in an overlay; click **×** or outside the image, or use browser **Back**
+or **Escape**, to return to the page.
+Collapsible sections remember their open or closed state in this browser,
 including when navigating to another page or reloading the browser.
+
+Expand **Prompts used**, the last section in the right-hand column, to inspect and copy the saved instructions for the
+displayed collection’s analysis. These are the prompt versions recorded with that run, rather than
+the current source-code definitions. The panel omits page evidence appended to individual requests
+and is available when the displayed analysis has saved prompts.
+
+Use **Flag** in **Correct grouping** to bookmark the current document for later examination.
+Flagged documents are marked in the section list; use **Remove flag** to clear the bookmark.
+Flags persist across restarts and analyses. A flag follows the document’s first page when pages
+are moved or documents split or join; removing a flag clears all flag markers in the current document.
+Flags are independent of grouping corrections and their Undo history.
 
 The browser opens at `/archive/` and follows the archive's folder hierarchy. A folder such as
 `91+01011-3` appears as a top-level entry even if its images are all in child collections. Click through

@@ -148,6 +148,12 @@ def load_run(
     sections = build_effective_sections(
         original_sections, pages, boundaries, data["reviewed_labels"]
     )
+    flagged_pages = storage.load_document_flags(output_dir, collection_id)
+    for section in sections:
+        section["flagged"] = any(
+            int(pages[number]["page_id"]) in flagged_pages
+            for number in range(int(section["start_page"]), int(section["end_page"]) + 1)
+        )
     page_sections = {
         page_number: section
         for section in sections
@@ -271,31 +277,29 @@ def _page_context(
         ("Header", page.get("header_text")),
         ("Footer", page.get("footer_text")),
     ]
-    review_actions: list[dict[str, Any]] = []
-    if section_start > 1:
-        review_actions.append({
+    review_actions: list[dict[str, Any]] = [
+        {
             "url": f"{content_url}/review/boundaries/{section_start}/join",
-            "label": "Attach section to previous",
+            "label": "Attach to previous",
+            "row": "attach",
             "secondary": False,
-        })
-    if page_number > section_start:
-        review_actions.append({
+            "disabled": section_start == 1,
+        },
+        {
             "url": f"{content_url}/review/boundaries/{page_number}/split",
             "label": "Split before this page",
+            "row": "split",
             "secondary": False,
-        })
-    if section_end < run.page_count:
-        review_actions.append({
+            "disabled": page_number == section_start,
+        },
+        {
             "url": f"{content_url}/review/boundaries/{section_end + 1}/join",
-            "label": "Attach section to next",
+            "label": "Attach to next",
+            "row": "attach",
             "secondary": False,
-        })
-    if run.can_undo:
-        review_actions.append({
-            "url": f"{content_url}/review/undo?page={page_number}",
-            "label": "Undo last adjustment",
-            "secondary": True,
-        })
+            "disabled": section_end == run.page_count,
+        },
+    ]
     boundary = run.boundaries.get(page_number)
     boundary_view = None
     if boundary:
@@ -320,6 +324,8 @@ def _page_context(
         "confidence_label": f'{float(page.get("extraction_confidence", 0)):.0%}',
         "metadata": [{"label": label, "value": value} for label, value in metadata],
         "review_actions": review_actions,
+        "flag_url": f"{content_url}/review/pages/{page_number}/{'unflag' if section['flagged'] else 'flag'}",
+        "undo_url": f"{content_url}/review/undo?page={page_number}",
         "move_url": f"{content_url}/review/pages/{page_number}/move",
         "image_url": f"{content_url}/images/{page_number}",
         "original_url": (
@@ -653,6 +659,28 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/join")
     def collection_join(collection_id: str, right_page: int) -> RedirectResponse:
         return page_redirect(update_collection(collection_id, right_page, False), right_page)
+
+    def flag_collection_document(collection_id: str, page_number: int, flagged: bool) -> RedirectResponse:
+        with lock:
+            collection = selected(collection_id)
+            section = collection.run.page_sections.get(page_number)
+            if section is None:
+                raise HTTPException(status_code=404, detail="Page not found")
+            page_ids = [
+                int(collection.run.pages[number]["page_id"])
+                for number in range(int(section["start_page"]), int(section["end_page"]) + 1)
+            ]
+            storage.set_document_flag(collection.run.output_dir, collection_id, page_ids, flagged)
+            run = load_run(collection.run.output_dir, collection.run.input_dir, collection_id)
+            return page_redirect(remember(collection, run), page_number)
+
+    @app.post("/collections/{collection_id}/review/pages/{page_number}/flag")
+    def collection_flag(collection_id: str, page_number: int) -> RedirectResponse:
+        return flag_collection_document(collection_id, page_number, True)
+
+    @app.post("/collections/{collection_id}/review/pages/{page_number}/unflag")
+    def collection_unflag(collection_id: str, page_number: int) -> RedirectResponse:
+        return flag_collection_document(collection_id, page_number, False)
 
     def move_collection_page(collection_id: str, page_number: int, target_page: int) -> RedirectResponse:
         with lock:

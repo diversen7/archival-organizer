@@ -56,23 +56,34 @@
           <section class="card review-controls">
             <h2>Correct grouping</h2>
             <p>Adjust document boundaries within this collection. Original AI results are preserved.</p>
-            <div class="review-actions">
-              {% for action in review_actions %}
-                {{ review_form(action.url, action.label, action.secondary) }}
-              {% endfor %}
+            <div class="review-actions review-row flag-actions">
+              {{ review_form(flag_url, 'Remove flag' if section.flagged else 'Flag') }}
+              {{ review_form(undo_url, 'Undo last adjustment', true, not run.can_undo) }}
             </div>
+            {% for row in ['attach', 'split'] %}
+              {% set actions = review_actions | selectattr('row', 'equalto', row) | list %}
+              {% if actions %}
+                <div class="review-actions review-row">
+                  {% for action in actions %}
+                    {{ review_form(action.url, action.label, action.secondary, action.disabled | default(false)) }}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
             {% if run.page_count > 1 %}
               <form class="move-page-form" method="post" action="{{ move_url }}">
                 <label for="target-page">Move this page after page</label>
-                <input
-                  id="target-page"
-                  name="target_page"
-                  type="number"
-                  min="1"
-                  max="{{ run.page_count }}"
-                  required
-                >
-                <button type="submit">Move page</button>
+                <div class="review-actions review-row">
+                  <input
+                    id="target-page"
+                    name="target_page"
+                    type="number"
+                    min="1"
+                    max="{{ run.page_count }}"
+                    required
+                  >
+                  <button type="submit">Move page</button>
+                </div>
               </form>
             {% endif %}
             {% if section.review_adjusted and section.label_needs_review %}
@@ -121,6 +132,9 @@
                 {{ field("Reason", boundary.reason, true) }}
               </dl>
             </section>
+          {% endif %}
+          {% if run.prompts %}
+            {% include "prompts.html" %}
           {% endif %}
         </div>
       </div>

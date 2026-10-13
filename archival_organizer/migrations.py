@@ -6,7 +6,7 @@ commit, or transaction-control statements inside migrations.
 """
 
 BASE_SCHEMA_VERSION = 4
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 BASE_SCHEMA = (
     """CREATE TABLE IF NOT EXISTS metadata (
@@ -180,4 +180,12 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         )""",
     ),
 
+    6: (
+        """CREATE TABLE document_flags (
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+            flagged_at TEXT NOT NULL,
+            PRIMARY KEY (collection_id, page_id)
+        )""",
+    ),
 }

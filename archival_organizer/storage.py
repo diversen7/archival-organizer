@@ -691,6 +691,38 @@ def save_reviewed_label(
         )
 
 
+def load_document_flags(output_dir: Path, collection_id: str) -> set[int]:
+    with connect(output_dir) as database:
+        return {int(row[0]) for row in database.execute(
+            "SELECT page_id FROM document_flags WHERE collection_id = ?", (collection_id,)
+        )}
+
+
+def set_document_flag(
+    output_dir: Path, collection_id: str, page_ids: list[int], flagged: bool,
+) -> None:
+    """Anchor a bookmark to the first page; clearing removes all anchors in the group."""
+    if not page_ids:
+        raise ValueError("A flagged document must contain at least one page")
+    with connect(output_dir) as database:
+        for page_id in page_ids:
+            if database.execute(
+                "SELECT 1 FROM pages WHERE id = ? AND collection_id = ?",
+                (page_id, collection_id),
+            ).fetchone() is None:
+                raise ValueError("Flagged page does not belong to this collection")
+        if flagged:
+            database.execute(
+                "INSERT OR IGNORE INTO document_flags VALUES (?, ?, ?)",
+                (collection_id, page_ids[0], _now()),
+            )
+        else:
+            database.executemany(
+                "DELETE FROM document_flags WHERE collection_id = ? AND page_id = ?",
+                [(collection_id, page_id) for page_id in page_ids],
+            )
+
+
 def set_boundary_override(
     output_dir: Path, collection_id: str, right_position: int, decision: bool
 ) -> None:
