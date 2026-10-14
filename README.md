@@ -274,8 +274,9 @@ cannot be recovered.
 
 The browser opens at `/archive/` and follows the archive's folder hierarchy. Each analyzed folder
 listing shows its recorded edit count, including edits in all descendant collections. Counts include
-Undo actions and imported history records; they count recorded actions rather than currently active
-changes. Counts update when you revisit a listing after saving an edit.
+Undo actions and each individual entry recovered from imported history, matching the rows in
+**Collection edits** rather than currently active changes. Counts update when you revisit a listing
+after saving an edit.
 A folder such as
 `91+01011-3` appears as a top-level entry even if its images are all in child collections. Click through
 folders to reach a collection; folder lists can be filtered by name and show totals for completed

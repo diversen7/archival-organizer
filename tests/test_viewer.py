@@ -284,7 +284,7 @@ def test_history_recovers_individual_legacy_adjustments_and_move(tmp_path: Path)
             for statement in migrations.MIGRATIONS[version]:
                 database.execute(statement)
         database.execute("INSERT INTO metadata VALUES ('schema_version', '7')")
-    _add_sample_collection(output, tmp_path / "images", "default")
+    _add_sample_collection(output, tmp_path / "images", "default", "box/folder")
     storage.set_boundary_override(output, "default", 2, True)
     storage.set_boundary_override(output, "default", 2, False)
     storage.set_boundary_override(output, "default", 2, True)
@@ -292,6 +292,8 @@ def test_history_recovers_individual_legacy_adjustments_and_move(tmp_path: Path)
     before = storage.load_collection_data(output, "default")
     with TestClient(create_app(output)) as client:
         rendered = client.get("/collections/default/history").text
+        assert "2 pages · 1 collection · 4 edits" in client.get("/archive/").text
+        assert "2 pages · 1 collection · 4 edits" in client.get("/archive/box/").text
     assert rendered.count("<td>John Doe</td>") == 4
     assert rendered.count("Split before page 2.png") == 2
     assert rendered.count("Joined before page 2.png") == 1
@@ -299,6 +301,19 @@ def test_history_recovers_individual_legacy_adjustments_and_move(tmp_path: Path)
     assert rendered.index("Moved page 1.png") < rendered.index("Split before page 2.png")
     assert storage.load_collection_data(output, "default") == before
     assert len(storage.load_edit_history(output, "default")) == 1
+
+    with TestClient(create_app(output)) as client:
+        for action in ("flag", "unflag"):
+            assert client.post(
+                f"/collections/default/review/pages/1/{action}",
+                data={"reviewer_name": "Dennis"}, follow_redirects=False,
+            ).status_code == 303
+        history = client.get("/collections/default/history").text
+        assert history.count("<td>John Doe</td>") == 4
+        assert history.count("<td>Dennis</td>") == 2
+        assert len(storage.load_edit_history(output, "default")) == 3
+        assert "2 pages · 1 collection · 6 edits" in client.get("/archive/").text
+        assert "2 pages · 1 collection · 6 edits" in client.get("/archive/box/").text
 
 
 def test_history_does_not_guess_which_page_moved_in_ambiguous_swap():
@@ -612,7 +627,9 @@ def test_archive_folder_edit_counts_aggregate_and_update(tmp_path: Path):
         assert "2 pages · 1 collection · 2 edits" in box
         assert "2 pages · 1 collection · 2 edits" in client.get("/archive/box/nested/").text
         assert " edits</span>" not in client.get("/preview/").text
-        assert storage.load_edit_counts(output) == {"parent": 1, "a": 1, "b": 2}
+        assert {key: len(storage.load_edit_history(output, key)) for key in ("parent", "a", "b")} == {
+            "parent": 1, "a": 1, "b": 2,
+        }
 
     with TestClient(create_app(output)) as client:
         assert "6 pages · 3 collections · 4 edits" in client.get("/archive/").text

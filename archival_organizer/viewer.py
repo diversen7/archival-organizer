@@ -181,6 +181,27 @@ def _history_rows(
     return rows
 
 
+def _load_collection_history(output_dir: Path, collection_id: str) -> list[dict[str, Any]]:
+    """Expand imported snapshots consistently for history displays and totals."""
+    edits = storage.load_edit_history(output_dir, collection_id)
+    if not any(edit["action"] == "existing_state" for edit in edits):
+        return edits
+    with storage.connect(output_dir) as database:
+        filenames = {int(row["id"]): str(row["filename"]) for row in database.execute(
+            "SELECT id, filename FROM pages WHERE collection_id = ?", (collection_id,)
+        )}
+        source_orders = []
+        for run in database.execute(
+            "SELECT id, completed_at FROM analysis_runs WHERE collection_id = ? AND completed_at IS NOT NULL ORDER BY completed_at, id",
+            (collection_id,),
+        ):
+            order = [int(row[0]) for row in database.execute(
+                "SELECT page_id FROM run_pages WHERE run_id = ? ORDER BY position", (run["id"],)
+            )]
+            source_orders.append((str(run["completed_at"]), order))
+    return _history_rows(edits, filenames, source_orders)
+
+
 def _asset_version() -> str:
     project_file = WEB_DIR.parents[1] / "pyproject.toml"
     if project_file.is_file():
@@ -495,15 +516,11 @@ def _folder_context(
     collections: list[ArchiveCollection], relative_path: str = "."
 ) -> dict[str, Any]:
     """Derive navigation from completed collections, including image-free ancestors."""
-    counts_by_output = {
-        output: storage.load_edit_counts(output)
-        for output in {collection.run.output_dir for collection in collections}
-    }
     return _navigation_context(
         {collection.relative_path: collection.run.page_count for collection in collections},
         relative_path,
         edit_counts={
-            collection.relative_path: counts_by_output[collection.run.output_dir].get(collection.collection_id, 0)
+            collection.relative_path: len(_load_collection_history(collection.run.output_dir, collection.collection_id))
             for collection in collections
         },
     )
@@ -770,22 +787,9 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
     @app.get("/collections/{collection_id}/history", response_class=HTMLResponse)
     def collection_history(collection_id: str) -> str:
         collection = selected(collection_id)
-        with storage.connect(collection.run.output_dir) as database:
-            filenames = {int(row["id"]): str(row["filename"]) for row in database.execute(
-                "SELECT id, filename FROM pages WHERE collection_id = ?", (collection_id,)
-            )}
-            source_orders = []
-            for run in database.execute(
-                "SELECT id, completed_at FROM analysis_runs WHERE collection_id = ? AND completed_at IS NOT NULL ORDER BY completed_at, id",
-                (collection_id,),
-            ):
-                order = [int(row[0]) for row in database.execute(
-                    "SELECT page_id FROM run_pages WHERE run_id = ? ORDER BY position", (run["id"],)
-                )]
-                source_orders.append((str(run["completed_at"]), order))
         return templates.get_template("history.html").render(
             collection=collection, back_url=_archive_url(collection.relative_path),
-            edits=_history_rows(storage.load_edit_history(collection.run.output_dir, collection_id), filenames, source_orders),
+            edits=_load_collection_history(collection.run.output_dir, collection_id),
         )
 
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/split")
