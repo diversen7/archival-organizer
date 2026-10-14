@@ -264,7 +264,10 @@ Open **Collection edits** to see the named, timestamped history of boundary corr
 flags, flag removals, regenerated labels, and Undo. History is written transactionally with each
 change and remains after a change is undone. Version 8 imports existing saved review state under
 **John Doe**, with the migration timestamp, preserving original timestamps inside the snapshot.
-Imported entries are marked explicitly; earlier removed flags and undone changes cannot be recovered.
+Existing changes appear as ordinary John Doe rows with the migration timestamp. Preserved Undo
+snapshots recover individual grouping adjustments and page moves where possible. Ambiguous moves
+show the recovered page order. Earlier removed flags and undone changes whose records were deleted
+cannot be recovered.
 
 The browser opens at `/archive/` and follows the archive's folder hierarchy. A folder such as
 `91+01011-3` appears as a top-level entry even if its images are all in child collections. Click through

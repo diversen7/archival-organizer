@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from archival_organizer import storage
+from archival_organizer import migrations, storage
 from archival_organizer.labeling import regenerate_collection_labels
 from archival_organizer.viewer import (
     _change_boundary,
@@ -16,6 +16,7 @@ from archival_organizer.viewer import (
     _render_collections,
     _folder_context,
     _render_page,
+    _history_rows,
     _undo_boundary_change,
     WEB_DIR,
     templates,
@@ -218,6 +219,35 @@ def test_review_edits_require_name_and_keep_chronological_history(tmp_path: Path
     assert len(storage.load_edit_history(output, "default")) == 4
 
 
+def test_existing_john_doe_edits_display_as_ordinary_history_rows(tmp_path: Path):
+    output = tmp_path / "archive"
+    with storage.connect(output) as database:
+        for statement in migrations.BASE_SCHEMA:
+            database.execute(statement)
+        for version in (4, 5, 6):
+            for statement in migrations.MIGRATIONS[version]:
+                database.execute(statement)
+        database.execute("INSERT INTO metadata VALUES ('schema_version', '7')")
+    _add_sample_collection(output, tmp_path / "images", "default")
+    storage.set_boundary_override(output, "default", 2, True)
+    storage.set_document_flag(output, "default", [1], True)
+    storage.save_reviewed_label(output, "default", [1], {
+        "label": "Old <label>", "document_type": "letter", "summary": "",
+        "date": "", "places": [], "subjects": [], "confidence": 1.0,
+    })
+    with TestClient(create_app(output)) as client:
+        rendered = client.get("/collections/default/history").text
+    saved = storage.load_edit_history(output, "default")
+    assert len(saved) == 1
+    assert rendered.count("<td>John Doe</td>") == 3
+    assert rendered.count(f'datetime="{saved[0]["recorded_at"]}"') == 3
+    assert "Split before page 2.png" in rendered
+    assert "Flagged document starting at page 1.png" in rendered
+    assert "Regenerated label for page 1.png: Old &lt;label&gt;" in rendered
+    assert "Imported during migration" not in rendered
+    assert "Existing saved state" not in rendered
+
+
 def test_document_flags_persist_and_can_be_removed_from_any_page(tmp_path: Path):
     output = _sample_run(tmp_path)
     original = load_run(output)
@@ -243,6 +273,43 @@ def test_document_flags_persist_and_can_be_removed_from_any_page(tmp_path: Path)
         assert client.post("/collections/default/review/pages/1/unflag", headers={"X-Reviewer-Name": "Test Reviewer"}).status_code == 200
         assert "Remove flag" not in client.get("/archive/").text
     assert not load_run(output).sections[0]["flagged"]
+
+
+def test_history_recovers_individual_legacy_adjustments_and_move(tmp_path: Path):
+    output = tmp_path / "archive"
+    with storage.connect(output) as database:
+        for statement in migrations.BASE_SCHEMA:
+            database.execute(statement)
+        for version in (4, 5, 6):
+            for statement in migrations.MIGRATIONS[version]:
+                database.execute(statement)
+        database.execute("INSERT INTO metadata VALUES ('schema_version', '7')")
+    _add_sample_collection(output, tmp_path / "images", "default")
+    storage.set_boundary_override(output, "default", 2, True)
+    storage.set_boundary_override(output, "default", 2, False)
+    storage.set_boundary_override(output, "default", 2, True)
+    storage.move_page_after(output, "default", 1, 2)
+    before = storage.load_collection_data(output, "default")
+    with TestClient(create_app(output)) as client:
+        rendered = client.get("/collections/default/history").text
+    assert rendered.count("<td>John Doe</td>") == 4
+    assert rendered.count("Split before page 2.png") == 2
+    assert rendered.count("Joined before page 2.png") == 1
+    assert "Moved page 1.png after page 2.png" in rendered
+    assert rendered.index("Moved page 1.png") < rendered.index("Split before page 2.png")
+    assert storage.load_collection_data(output, "default") == before
+    assert len(storage.load_edit_history(output, "default")) == 1
+
+
+def test_history_does_not_guess_which_page_moved_in_ambiguous_swap():
+    rows = _history_rows([{
+        "action": "existing_state", "reviewer_name": "John Doe", "recorded_at": "2026-10-13",
+        "details": {
+            "page_order": [{"page_id": page_id, "position": position} for position, page_id in enumerate([1, 3, 2], 1)],
+            "undo_snapshots": [{"id": 1, "created_at": "2026-10-12", "page_order": [], "boundaries": []}],
+        },
+    }], {1: "1.png", 2: "2.png", 3: "3.png"}, [("2026-10-11", [1, 2, 3])])
+    assert [row["summary"] for row in rows] == ["Saved page order: 1.png, 3.png, 2.png"]
 
 
 def test_named_move_label_and_join_are_audited_and_collection_scoped(tmp_path: Path):

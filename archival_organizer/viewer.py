@@ -88,6 +88,99 @@ def _value(value: Any) -> str:
     return str(value)
 
 
+def _recover_grouping_edits(
+    snapshot: dict[str, Any], filenames: dict[int, str], recorded_at: str,
+    source_orders: list[tuple[str, list[int]]],
+) -> list[str]:
+    def boundary_summary(boundary: dict[str, Any]) -> str:
+        action = "Split before" if boundary["decision"] else "Joined before"
+        return f"{action} {filenames.get(boundary['right_page_id'], 'missing page')}"
+
+    def order_summary(order: list[int]) -> str:
+        return "Saved page order: " + ", ".join(filenames.get(page_id, "missing page") for page_id in order)
+
+    def source_order(at: str) -> list[int]:
+        return next((order for completed, order in reversed(source_orders) if completed <= at), [])
+
+    def boundaries(state: dict[str, Any]) -> dict[tuple[int, int], int]:
+        return {(item["left_page_id"], item["right_page_id"]): item["decision"]
+                for item in state.get("boundaries", [])}
+
+    final_order = [item["page_id"] for item in sorted(snapshot.get("page_order", []), key=lambda item: item["position"])]
+    final = {"page_order": final_order, "boundaries": snapshot.get("boundaries", []), "created_at": recorded_at}
+    states = sorted(snapshot.get("undo_snapshots", []), key=lambda item: item["id"])
+    if not states:
+        return [boundary_summary(item) for item in final["boundaries"]] + ([order_summary(final_order)] if final_order else [])
+
+    # Any state predating the surviving Undo stack remains a saved edit too.
+    summaries = [boundary_summary(item) for item in states[0].get("boundaries", [])]
+    if states[0].get("page_order"):
+        summaries.append(order_summary(states[0]["page_order"]))
+    for before, after in zip(states, states[1:] + [final]):
+        before_order = before.get("page_order", [])
+        after_order = after.get("page_order", [])
+        if before_order != after_order:
+            old_order = before_order or source_order(before["created_at"])
+            new_order = after_order or source_order(after["created_at"])
+            candidates = []
+            if len(old_order) == len(new_order) and set(old_order) == set(new_order):
+                first_change = next((index for index, pair in enumerate(zip(old_order, new_order)) if pair[0] != pair[1]), None)
+                possible_pages = {old_order[first_change], new_order[first_change]} if first_change is not None else set()
+                for page_id in sorted(possible_pages):
+                    position = new_order.index(page_id)
+                    if position and old_order.index(page_id) != position and (
+                        [item for item in old_order if item != page_id] ==
+                        [item for item in new_order if item != page_id]
+                    ):
+                        candidates.append((page_id, new_order[position - 1]))
+            if len(candidates) == 1:
+                moved, target = candidates[0]
+                summaries.append(f"Moved {filenames.get(moved, 'missing page')} after {filenames.get(target, 'missing page')}")
+            else:
+                # Swaps can be produced by moving either page; keep the recovered order exact.
+                summary = order_summary(new_order)
+                old_boundaries = boundaries(before)
+                adjustments = [boundary_summary({"right_page_id": right, "decision": decision})
+                               for (left, right), decision in boundaries(after).items()
+                               if old_boundaries.get((left, right)) != decision]
+                if adjustments:
+                    summary += "; " + "; ".join(adjustments)
+                summaries.append(summary)
+            # Boundary changes made by a move are part of that same edit.
+            continue
+        old_boundaries = boundaries(before)
+        new_boundaries = boundaries(after)
+        changes = [boundary_summary({"right_page_id": right, "decision": decision})
+                   for (left, right), decision in new_boundaries.items()
+                   if old_boundaries.get((left, right)) != decision]
+        removed = old_boundaries.keys() - new_boundaries.keys()
+        changes.extend(f"Removed boundary correction before {filenames.get(right, 'missing page')}"
+                       for _left, right in sorted(removed))
+        summaries.extend(changes or ["Grouping adjustment with no change to saved state"])
+    return list(reversed(summaries))
+
+
+def _history_rows(
+    edits: list[dict[str, Any]], filenames: dict[int, str],
+    source_orders: list[tuple[str, list[int]]] | None = None,
+) -> list[dict[str, Any]]:
+    rows = []
+    for edit in edits:
+        if edit["action"] != "existing_state":
+            rows.append(edit)
+            continue
+        snapshot = edit["details"]
+        summaries = _recover_grouping_edits(snapshot, filenames, edit["recorded_at"], source_orders or [])
+        for label in snapshot.get("labels", []):
+            filename = filenames.get(label["page_ids"][0], "missing page")
+            summaries.append(f"Regenerated label for {filename}: {label['label']}")
+        for flag in snapshot.get("flags", []):
+            summaries.append("Flagged document starting at " + filenames.get(flag["page_id"], "missing page"))
+        for summary in summaries or ["Existing saved grouping adjustments"]:
+            rows.append({**edit, "summary": summary})
+    return rows
+
+
 def _asset_version() -> str:
     project_file = WEB_DIR.parents[1] / "pyproject.toml"
     if project_file.is_file():
@@ -670,10 +763,18 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
             filenames = {int(row["id"]): str(row["filename"]) for row in database.execute(
                 "SELECT id, filename FROM pages WHERE collection_id = ?", (collection_id,)
             )}
+            source_orders = []
+            for run in database.execute(
+                "SELECT id, completed_at FROM analysis_runs WHERE collection_id = ? AND completed_at IS NOT NULL ORDER BY completed_at, id",
+                (collection_id,),
+            ):
+                order = [int(row[0]) for row in database.execute(
+                    "SELECT page_id FROM run_pages WHERE run_id = ? ORDER BY position", (run["id"],)
+                )]
+                source_orders.append((str(run["completed_at"]), order))
         return templates.get_template("history.html").render(
             collection=collection, back_url=_archive_url(collection.relative_path),
-            edits=storage.load_edit_history(collection.run.output_dir, collection_id),
-            filenames=filenames,
+            edits=_history_rows(storage.load_edit_history(collection.run.output_dir, collection_id), filenames, source_orders),
         )
 
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/split")

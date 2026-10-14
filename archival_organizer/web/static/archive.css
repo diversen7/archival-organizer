@@ -111,7 +111,6 @@ pre { white-space: pre-wrap; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo
 .edit-history table { width: 100%; border-collapse: collapse; }
 .edit-history th, .edit-history td { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
 .edit-history time { white-space: nowrap; }
-.imported-edit { color: var(--muted); font-size: 13px; }
 .move-page-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .review-controls .review-note { color: var(--warn); font-weight: 700; margin: 13px 0 0; }
 .review-controls .review-note.regenerated { color: var(--accent-strong); }

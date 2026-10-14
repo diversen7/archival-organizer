@@ -14,26 +14,7 @@
             <tr>
               <td><time datetime="{{ edit.recorded_at }}">{{ edit.recorded_at | replace('T', ' ') | replace('+00:00', '') }}</time></td>
               <td>{{ edit.reviewer_name }}</td>
-              <td>
-                {{ edit.summary }}
-                {% if edit.imported %}
-                  <p class="imported-edit">Imported during migration. This is the recording time, not the original edit time.</p>
-                  <details>
-                    <summary>Existing saved state</summary>
-                    <ul>
-                      {% for boundary in edit.details.boundaries %}
-                        <li>{{ 'Split' if boundary.decision else 'Join' }} between {{ filenames.get(boundary.left_page_id, 'missing page') }} and {{ filenames.get(boundary.right_page_id, 'missing page') }} · {{ boundary.reviewed_at }}</li>
-                      {% endfor %}
-                      {% if edit.details.page_order %}
-                        <li>Saved page order: {% for page in edit.details.page_order %}{{ filenames.get(page.page_id, 'missing page') }}{% if not loop.last %}, {% endif %}{% endfor %}</li>
-                      {% endif %}
-                      {% for label in edit.details.labels %}<li>Reviewed label: {{ label.label }} · {{ label.reviewed_at }}</li>{% endfor %}
-                      {% for flag in edit.details.flags %}<li>Flagged: {{ filenames.get(flag.page_id, 'missing page') }} · {{ flag.flagged_at }}</li>{% endfor %}
-                      {% if edit.details.undo_snapshots %}<li>{{ edit.details.undo_snapshots | length }} existing Undo snapshots preserved.</li>{% endif %}
-                    </ul>
-                  </details>
-                {% endif %}
-              </td>
+              <td>{{ edit.summary }}</td>
             </tr>
           {% endfor %}
         </tbody>
