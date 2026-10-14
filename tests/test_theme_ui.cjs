@@ -81,6 +81,16 @@ test("unknown stored preferences fall back to system", () => {
   assert.equal(page.root.dataset.theme, undefined);
 });
 
+test("navigation preference is restored before DOM ready without affecting the theme", () => {
+  for (const value of ["hidden", "shown", null, "unknown"]) {
+    const page = loadTheme({ getItem: (key) => key === "archive-browser:sidebar" ? value : "dark" });
+    assert.equal(page.root.dataset.sidebarHidden, String(value === "hidden"));
+    assert.equal(page.root.dataset.theme, "dark");
+  }
+  const page = loadTheme({ getItem() { throw new Error("Storage blocked"); } });
+  assert.equal(page.root.dataset.sidebarHidden, "false");
+});
+
 test("switch follows system changes until explicitly toggled, then follows again after reset", () => {
   const page = loadTheme({ getItem: () => null, setItem() {}, removeItem() {} }, true);
   page.ready();

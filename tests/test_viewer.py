@@ -265,7 +265,7 @@ def test_document_flags_persist_and_can_be_removed_from_any_page(tmp_path: Path)
     with TestClient(app) as client:
         response = client.post("/collections/default/review/pages/2/flag", headers={"X-Reviewer-Name": "Test Reviewer"}, follow_redirects=False)
         assert response.status_code == 303
-        assert response.headers["location"] == "/archive/?page=2"
+        assert response.headers["location"] == "/archive/?page=2#page-strip"
         assert "Remove flag" in client.get("/archive/?page=1").text
         assert '<span class="flagged">Flagged</span>' in client.get("/archive/?page=2").text
         assert client.post("/collections/default/review/pages/999/flag", headers={"X-Reviewer-Name": "Test Reviewer"}).status_code == 404
@@ -514,7 +514,7 @@ def test_move_page_form_and_route(tmp_path: Path):
             follow_redirects=False,
         )
         assert response.status_code == 303
-        assert response.headers["location"] == "/archive/?page=4"
+        assert response.headers["location"] == "/archive/?page=4#page-strip"
         assert load_run(output).pages[4]["file"] == "page 2.png"
 
 
@@ -712,16 +712,16 @@ def test_readable_paths_handle_special_characters_and_review_actions(tmp_path: P
             response = client.post(
                 f"/collections/special/review/boundaries/2/{action}", headers={"X-Reviewer-Name": "Test Reviewer"}, follow_redirects=False,
             )
-            assert response.headers["location"] == url + "?page=2"
+            assert response.headers["location"] == url + "?page=2#page-strip"
             assert client.get(response.headers["location"]).status_code == 200
         moved = client.post(
             "/collections/special/review/pages/1/move", headers={"X-Reviewer-Name": "Test Reviewer"}, data={"target_page": "2"},
             follow_redirects=False,
         )
-        assert moved.headers["location"] == url + "?page=2"
+        assert moved.headers["location"] == url + "?page=2#page-strip"
         assert load_run(output, collection_id="special").pages[1]["file"] == "page 2.png"
         undo = client.post("/collections/special/review/undo?page=2", headers={"X-Reviewer-Name": "Test Reviewer"}, follow_redirects=False)
-        assert undo.headers["location"] == url + "?page=2"
+        assert undo.headers["location"] == url + "?page=2#page-strip"
         assert load_run(output, collection_id="special").pages[1]["file"] == "page 1.png"
         assert not load_run(output, collection_id="other").boundary_overrides
 

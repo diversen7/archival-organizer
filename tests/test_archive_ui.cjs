@@ -9,8 +9,8 @@ const script = readFileSync(
 );
 
 function loadSidebar(storage) {
-  const layout = { dataset: {} };
-  const panel = { hidden: false, closest: () => layout };
+  const root = { dataset: {} };
+  const panel = { hidden: false };
   const label = { textContent: "Hide navigation" };
   const button = { attributes: {}, disabled: true };
   let click;
@@ -20,11 +20,12 @@ function loadSidebar(storage) {
   runInNewContext(script, {
     localStorage: storage,
     document: {
+      documentElement: root,
       querySelector: (selector) => ({ "#sidebar-toggle": button, "#archive-sidebar": panel })[selector] ?? null,
       querySelectorAll: () => [],
     },
   });
-  return { layout, panel, label, button, click: () => click() };
+  return { root, panel, label, button, click: () => click() };
 }
 
 test("navigation toggle hides the column, restores it, and remembers the choice across pages", () => {
@@ -38,14 +39,14 @@ test("navigation toggle hides the column, restores it, and remembers the choice 
   assert.equal(page.button.disabled, false);
   page.click();
   assert.equal(page.panel.hidden, true);
-  assert.equal(page.layout.dataset.sidebarHidden, "true");
+  assert.equal(page.root.dataset.sidebarHidden, "true");
   assert.equal(page.button.attributes["aria-expanded"], "false");
   assert.equal(page.label.textContent, "Show navigation");
   const next = loadSidebar(storage);
   assert.equal(next.panel.hidden, true);
   next.click();
   assert.equal(next.panel.hidden, false);
-  assert.equal(next.layout.dataset.sidebarHidden, "false");
+  assert.equal(next.root.dataset.sidebarHidden, "false");
   assert.equal(next.button.attributes["aria-expanded"], "true");
   assert.equal(next.label.textContent, "Hide navigation");
   assert.equal(loadSidebar(storage).panel.hidden, false);
@@ -217,47 +218,112 @@ test("image opens in a modal while modified clicks keep the original link", () =
   assert.equal(backCalls, 3, "Backdrop dismissal also restores page history");
 });
 
-test("reviewer name is remembered, required, and submitted with edits", () => {
-  const saved = new Map([["archive-browser:reviewer-name", "Alice"]]);
-  let submit;
-  let onChange;
-  let focused = false;
+function loadReviewer(storage) {
+  const ids = ["reviewer-name", "reviewer-editor", "reviewer-summary", "reviewer-tools",
+    "reviewer-display-name", "reviewer-start", "reviewer-change", "reviewer-cancel",
+    "reviewer-stop", "reviewer-status"];
+  const nodes = Object.fromEntries(ids.map(id => [id, {
+    value: "", textContent: "", hidden: false, listeners: {},
+    addEventListener(event, callback) { this.listeners[event] = callback; },
+    focus() { this.focused = true; },
+  }]));
   const field = { value: "" };
-  const status = { textContent: "" };
-  const form = {
-    addEventListener(_event, callback) { submit = callback; },
+  const editForm = {
+    addEventListener(event, callback) { this.submit = callback; },
     querySelector: () => field,
   };
-  const input = {
-    value: "",
-    addEventListener(_event, callback) { onChange = callback; },
-    closest: () => ({ querySelectorAll: () => [form] }),
-    focus() { focused = true; },
-  };
+  nodes["reviewer-tools"].querySelectorAll = () => [editForm];
   runInNewContext(script, {
-    localStorage: {
-      getItem: (key) => saved.get(key),
-      setItem: (key, value) => saved.set(key, value),
-    },
+    localStorage: storage,
     document: {
       querySelectorAll: () => [],
-      querySelector(selector) {
-        if (selector === "#reviewer-name") return input;
-        if (selector === "#reviewer-status") return status;
-        return null;
-      },
+      querySelector: (selector) => nodes[selector.slice(1)] ?? null,
     },
   });
-  assert.equal(input.value, "Alice");
-  input.value = " Bob ";
-  onChange();
-  submit({ preventDefault() { assert.fail("Named edits should submit"); } });
-  assert.equal(field.value, "Bob");
+  return {
+    nodes, field, editForm,
+    click(id) { nodes[id].listeners.click(); },
+    save(name) {
+      nodes["reviewer-name"].value = name;
+      nodes["reviewer-editor"].listeners.submit({ preventDefault() {} });
+    },
+  };
+}
+
+function reviewerStorage(saved) {
+  return {
+    getItem: (key) => saved.get(key),
+    setItem: (key, value) => saved.set(key, value),
+    removeItem: (key) => saved.delete(key),
+  };
+}
+
+test("review starts only with a valid committed name, remembers it, and stops explicitly", () => {
+  const saved = new Map();
+  const storage = reviewerStorage(saved);
+  const page = loadReviewer(storage);
+  const { nodes } = page;
+  assert.equal(nodes["reviewer-editor"].hidden, false);
+  assert.equal(nodes["reviewer-tools"].hidden, true);
+  assert.equal(nodes["reviewer-summary"].hidden, true);
+  page.save("   ");
+  assert.equal(nodes["reviewer-tools"].hidden, true);
+  assert.equal(nodes["reviewer-status"].hidden, false);
+  page.save("A".repeat(101));
+  assert.equal(nodes["reviewer-tools"].hidden, true);
+  page.save("  Alice <reviewer>  ");
+  assert.equal(nodes["reviewer-editor"].hidden, true);
+  assert.equal(nodes["reviewer-tools"].hidden, false);
+  assert.equal(nodes["reviewer-display-name"].textContent, "Alice <reviewer>");
+  page.editForm.submit({ preventDefault() { assert.fail("Named edits should submit"); } });
+  assert.equal(page.field.value, "Alice <reviewer>");
+  const next = loadReviewer(storage);
+  assert.equal(next.nodes["reviewer-editor"].hidden, true);
+  assert.equal(next.nodes["reviewer-tools"].hidden, false);
+  next.click("reviewer-change");
+  assert.equal(next.nodes["reviewer-tools"].hidden, true);
+  next.nodes["reviewer-name"].value = "Uncommitted name";
+  next.click("reviewer-cancel");
+  assert.equal(next.nodes["reviewer-display-name"].textContent, "Alice <reviewer>");
+  assert.equal(next.nodes["reviewer-tools"].hidden, false);
+  next.click("reviewer-change");
+  next.save(" Bob ");
+  next.editForm.submit({ preventDefault() { assert.fail("Named edits should submit"); } });
+  assert.equal(next.field.value, "Bob");
   assert.equal(saved.get("archive-browser:reviewer-name"), "Bob");
-  input.value = "  ";
+  next.click("reviewer-change");
+  next.click("reviewer-stop");
+  assert.equal(next.nodes["reviewer-editor"].hidden, false);
+  assert.equal(next.nodes["reviewer-tools"].hidden, true);
+  assert.equal(saved.has("archive-browser:reviewer-name"), false);
+  assert.equal(loadReviewer(storage).nodes["reviewer-tools"].hidden, true);
   let prevented = false;
-  submit({ preventDefault() { prevented = true; } });
+  next.editForm.submit({ preventDefault() { prevented = true; } });
   assert.equal(prevented, true);
-  assert.equal(focused, true);
-  assert.match(status.textContent, /Enter a reviewer name/);
+});
+
+test("invalid saved reviewer names stay in browsing mode", () => {
+  for (const name of ["  ", "A".repeat(101)]) {
+    const saved = new Map([["archive-browser:reviewer-name", name]]);
+    const page = loadReviewer(reviewerStorage(saved));
+    assert.equal(page.nodes["reviewer-tools"].hidden, true);
+    assert.equal(page.nodes["reviewer-editor"].hidden, false);
+  }
+});
+
+test("reviewing works with unavailable storage and edits are blocked while changing name", () => {
+  const fail = () => { throw new Error("Storage blocked"); };
+  const page = loadReviewer({ getItem: fail, setItem: fail, removeItem: fail });
+  page.save("Dennis");
+  assert.equal(page.nodes["reviewer-tools"].hidden, false);
+  page.click("reviewer-change");
+  let prevented = false;
+  page.editForm.submit({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  page.click("reviewer-cancel");
+  page.editForm.submit({ preventDefault() { assert.fail("Named edits should submit"); } });
+  assert.equal(page.field.value, "Dennis");
+  page.click("reviewer-change");
+  page.click("reviewer-stop");
+  assert.equal(page.nodes["reviewer-tools"].hidden, true);
 });

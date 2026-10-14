@@ -258,9 +258,11 @@ Flags persist across restarts and analyses. A flag follows the document’s firs
 are moved or documents split or join; removing a flag clears all flag markers in the current document.
 Flags are independent of grouping corrections and their Undo history.
 
-Enter a **Reviewer name** in **Correct grouping** before making edits. The browser remembers it
-on this device; edit the field to change the name for subsequent changes. Browsing does not require
-a name. The server also requires a name for every edit request (the `reviewer_name` form field,
+Enter your name in **Correct grouping** and select **Start reviewing** to reveal the review actions
+and **Collection edits** link. The browser remembers it on this device and shows a compact
+**Reviewing as …** row on subsequent pages. Select **Change** to save a different name, cancel editing,
+or **Stop reviewing** to clear the saved name and hide the tools. Browsing does not require a name.
+The server also requires a name for every edit request (the `reviewer_name` form field,
 or the `X-Reviewer-Name` header for API clients).
 
 Open **Collection edits** to see the named, timestamped history of boundary corrections, page moves,

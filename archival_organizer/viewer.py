@@ -651,9 +651,9 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
         state.by_id[collection.collection_id] = updated
         return updated
 
-    def page_redirect(collection: ArchiveCollection, page: int) -> RedirectResponse:
+    def page_redirect(collection: ArchiveCollection, page: int, *, anchor: str = "") -> RedirectResponse:
         return RedirectResponse(
-            url=f"{_archive_url(collection.relative_path)}?page={min(page, collection.run.page_count)}",
+            url=f"{_archive_url(collection.relative_path)}?page={min(page, collection.run.page_count)}{anchor}",
             status_code=303,
         )
 
@@ -794,11 +794,11 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
 
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/split")
     def collection_split(collection_id: str, right_page: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
-        return page_redirect(update_collection(collection_id, right_page, True, reviewer_name), right_page)
+        return page_redirect(update_collection(collection_id, right_page, True, reviewer_name), right_page, anchor="#page-strip")
 
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/join")
     def collection_join(collection_id: str, right_page: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
-        return page_redirect(update_collection(collection_id, right_page, False, reviewer_name), right_page)
+        return page_redirect(update_collection(collection_id, right_page, False, reviewer_name), right_page, anchor="#page-strip")
 
     def flag_collection_document(collection_id: str, page_number: int, flagged: bool, reviewer_name: str) -> RedirectResponse:
         with lock:
@@ -812,7 +812,7 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
             ]
             storage.set_document_flag(collection.run.output_dir, collection_id, page_ids, flagged, reviewer_name)
             run = load_run(collection.run.output_dir, collection.run.input_dir, collection_id)
-            return page_redirect(remember(collection, run), page_number)
+            return page_redirect(remember(collection, run), page_number, anchor="#page-strip")
 
     @app.post("/collections/{collection_id}/review/pages/{page_number}/flag")
     def collection_flag(collection_id: str, page_number: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:
@@ -840,7 +840,7 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
                 for number, page in run.pages.items()
                 if int(page["page_id"]) == moving_page_id
             )
-            return page_redirect(updated, new_position)
+            return page_redirect(updated, new_position, anchor="#page-strip")
 
     @app.post("/collections/{collection_id}/review/pages/{page_number}/move")
     async def collection_move_page(
@@ -858,7 +858,7 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
         collection_id: str, page: int = Query(default=1, ge=1), reviewer_name: str = Depends(require_reviewer),
     ) -> RedirectResponse:
         collection = update_collection(collection_id, None, None, reviewer_name)
-        return page_redirect(collection, page)
+        return page_redirect(collection, page, anchor="#page-strip")
 
     return app
 

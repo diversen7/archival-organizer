@@ -16,6 +16,14 @@
   // Apply saved choices before the stylesheet loads to avoid a flash of the wrong theme.
   apply();
 
+  // Restore navigation before the first paint, rather than waiting for archive.js.
+  root.dataset.sidebarHidden = "false";
+  try {
+    root.dataset.sidebarHidden = String(localStorage.getItem("archive-browser:sidebar") === "hidden");
+  } catch {
+    // Keep navigation visible when browser storage is unavailable.
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     const control = document.querySelector("#theme-mode");
     const systemControl = document.querySelector("#theme-system");

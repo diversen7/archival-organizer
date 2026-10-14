@@ -62,13 +62,19 @@
           {% endif %}
           <section class="card review-controls">
             <h2>Correct grouping</h2>
-            <p>Adjust document boundaries within this collection. Original AI results are preserved.</p>
-            <div class="reviewer-name">
-              <label for="reviewer-name">Reviewer name</label>
-              <input id="reviewer-name" type="text" maxlength="100" autocomplete="name" placeholder="Enter your name to edit" aria-describedby="reviewer-status">
-              <span id="reviewer-status" role="status">Enter or change the name used for new edits.</span>
-            </div>
-            <p><a href="{{ history_url }}">Collection edits</a></p>
+            <form id="reviewer-editor" class="reviewer-name">
+              <label for="reviewer-name">Enter your name to review</label>
+              <div class="reviewer-entry">
+                <input id="reviewer-name" type="text" maxlength="100" autocomplete="name" placeholder="Your name" aria-describedby="reviewer-status" required>
+                <button id="reviewer-start" type="submit">Start reviewing</button>
+              </div>
+              <span id="reviewer-status" role="status" hidden></span>
+              <div class="reviewer-editor-actions">
+                <button id="reviewer-cancel" type="button" hidden>Cancel</button>
+                <button id="reviewer-stop" type="button" hidden>Stop reviewing</button>
+              </div>
+            </form>
+            <div id="reviewer-tools" hidden>
             <div class="review-actions review-row flag-actions">
               {{ review_form(flag_url, 'Remove flag' if section.flagged else 'Flag') }}
               {{ review_form(undo_url, 'Undo last adjustment', true, not run.can_undo) }}
@@ -105,6 +111,13 @@
             {% elif section.label_source == "regenerated" %}
               <p class="review-note regenerated">This section's label and metadata were regenerated for its reviewed page grouping.</p>
             {% endif %}
+            <hr class="review-history-divider">
+            <p><a href="{{ history_url }}">Collection edits</a></p>
+            </div>
+            <div id="reviewer-summary" class="reviewer-summary" hidden>
+              <span>Reviewing as <strong id="reviewer-display-name"></strong></span>
+              <button id="reviewer-change" type="button">Change</button>
+            </div>
           </section>
 
           <section class="card">

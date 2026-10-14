@@ -22,11 +22,10 @@ const sidebarToggle = document.querySelector("#sidebar-toggle");
 
 if (sidebarToggle) {
   const sidebarPanel = document.querySelector("#archive-sidebar");
-  const layout = sidebarPanel.closest(".layout");
   const key = "archive-browser:sidebar";
   const setSidebarVisible = (visible) => {
     sidebarPanel.hidden = !visible;
-    layout.dataset.sidebarHidden = String(!visible);
+    document.documentElement.dataset.sidebarHidden = String(!visible);
     sidebarToggle.setAttribute("aria-expanded", String(visible));
     const label = visible ? "Hide navigation" : "Show navigation";
     sidebarToggle.querySelector("span").textContent = label;
@@ -70,24 +69,77 @@ const reviewerInput = document.querySelector("#reviewer-name");
 
 if (reviewerInput) {
   const reviewerKey = "archive-browser:reviewer-name";
+  const editor = document.querySelector("#reviewer-editor");
+  const summary = document.querySelector("#reviewer-summary");
+  const tools = document.querySelector("#reviewer-tools");
+  const displayName = document.querySelector("#reviewer-display-name");
+  const start = document.querySelector("#reviewer-start");
+  const change = document.querySelector("#reviewer-change");
+  const cancel = document.querySelector("#reviewer-cancel");
+  const stop = document.querySelector("#reviewer-stop");
   const status = document.querySelector("#reviewer-status");
-  try { reviewerInput.value = localStorage.getItem(reviewerKey) || ""; } catch {}
-  const rememberReviewer = () => {
-    const name = reviewerInput.value.trim();
-    try { localStorage.setItem(reviewerKey, name); } catch {}
-    return name;
+  const validName = (name) => name.length > 0 && name.length <= 100;
+  let reviewerName = "";
+  try { reviewerName = (localStorage.getItem(reviewerKey) || "").trim(); } catch {}
+  if (!validName(reviewerName)) reviewerName = "";
+  reviewerInput.value = reviewerName;
+
+  const renderReviewer = (editing = false) => {
+    editor.hidden = Boolean(reviewerName) && !editing;
+    summary.hidden = !reviewerName || editing;
+    tools.hidden = !reviewerName || editing;
+    displayName.textContent = reviewerName;
+    start.textContent = reviewerName ? "Save name" : "Start reviewing";
+    cancel.hidden = !reviewerName;
+    stop.hidden = !reviewerName;
+    status.textContent = "";
+    status.hidden = true;
   };
-  reviewerInput.addEventListener("change", rememberReviewer);
-  reviewerInput.closest(".review-controls").querySelectorAll("form[data-review-edit]").forEach((form) => {
+  const nameError = () => {
+    status.textContent = "Enter a reviewer name (1–100 characters) before making edits.";
+    status.hidden = false;
+    reviewerInput.focus();
+  };
+  renderReviewer();
+  editor.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = reviewerInput.value.trim();
+    if (!validName(name)) {
+      nameError();
+      return;
+    }
+    reviewerName = name;
+    reviewerInput.value = name;
+    try { localStorage.setItem(reviewerKey, name); } catch {}
+    renderReviewer();
+    change.focus();
+  });
+  change.addEventListener("click", () => {
+    reviewerInput.value = reviewerName;
+    renderReviewer(true);
+    reviewerInput.focus();
+  });
+  cancel.addEventListener("click", () => {
+    reviewerInput.value = reviewerName;
+    renderReviewer();
+    change.focus();
+  });
+  stop.addEventListener("click", () => {
+    reviewerName = "";
+    reviewerInput.value = "";
+    try { localStorage.removeItem(reviewerKey); } catch {}
+    renderReviewer();
+    reviewerInput.focus();
+  });
+  tools.querySelectorAll("form[data-review-edit]").forEach((form) => {
     form.addEventListener("submit", (event) => {
-      const name = rememberReviewer();
-      if (!name || name.length > 100) {
+      if (!validName(reviewerName) || !editor.hidden) {
         event.preventDefault();
-        status.textContent = "Enter a reviewer name (1–100 characters) before making edits.";
-        reviewerInput.focus();
+        renderReviewer(true);
+        nameError();
         return;
       }
-      form.querySelector('[name="reviewer_name"]').value = name;
+      form.querySelector('[name="reviewer_name"]').value = reviewerName;
     });
   });
 }
