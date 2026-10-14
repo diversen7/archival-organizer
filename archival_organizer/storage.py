@@ -670,6 +670,17 @@ def _append_edit(
     )
 
 
+def load_edit_counts(output_dir: Path) -> dict[str, int]:
+    """Count recorded edit actions without loading their history payloads."""
+    with connect(output_dir) as database:
+        return {
+            str(row["collection_id"]): int(row["edit_count"])
+            for row in database.execute(
+                "SELECT collection_id, COUNT(*) AS edit_count FROM edit_history GROUP BY collection_id"
+            )
+        }
+
+
 def load_edit_history(output_dir: Path, collection_id: str) -> list[dict[str, Any]]:
     with connect(output_dir) as database:
         return [dict(row, details=json.loads(row["details_json"])) for row in database.execute(

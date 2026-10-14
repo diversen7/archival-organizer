@@ -495,14 +495,23 @@ def _folder_context(
     collections: list[ArchiveCollection], relative_path: str = "."
 ) -> dict[str, Any]:
     """Derive navigation from completed collections, including image-free ancestors."""
+    counts_by_output = {
+        output: storage.load_edit_counts(output)
+        for output in {collection.run.output_dir for collection in collections}
+    }
     return _navigation_context(
         {collection.relative_path: collection.run.page_count for collection in collections},
         relative_path,
+        edit_counts={
+            collection.relative_path: counts_by_output[collection.run.output_dir].get(collection.collection_id, 0)
+            for collection in collections
+        },
     )
 
 
 def _navigation_context(
-    page_counts: Mapping[str, int], relative_path: str = ".", prefix: str = "/archive"
+    page_counts: Mapping[str, int], relative_path: str = ".", prefix: str = "/archive",
+    *, edit_counts: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
     """Build the same folder navigation for database and filesystem catalogs."""
     parent = PurePosixPath(relative_path)
@@ -523,6 +532,8 @@ def _navigation_context(
         })
         child["page_count"] += page_count
         child["collection_count"] += 1
+        if edit_counts is not None:
+            child["edit_count"] = child.get("edit_count", 0) + edit_counts.get(collection_path, 0)
     return {
         "breadcrumbs": crumbs,
         "folder_title": parent.name if parent.parts else "Archive Top",

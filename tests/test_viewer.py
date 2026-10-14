@@ -582,6 +582,42 @@ def test_multi_collection_viewer_has_picker_and_scoped_routes(tmp_path: Path):
     assert not load_run(library, collection_id="beta").boundary_overrides
 
 
+def test_archive_folder_edit_counts_aggregate_and_update(tmp_path: Path):
+    output, source = tmp_path / "archive", tmp_path / "scans"
+    storage.initialize(output)
+    for collection_id, path in [
+        ("parent", "box"), ("a", "box/folder1"),
+        ("b", "box/nested/folder2"), ("c", "other/folder3"),
+    ]:
+        _add_sample_collection(output, source / path, collection_id, path)
+
+    with TestClient(create_app(output, source)) as client:
+        assert "6 pages · 3 collections · 0 edits" in client.get("/archive/").text
+        for collection_id, endpoint in [
+            ("parent", "pages/1/flag"), ("a", "pages/1/flag"),
+            ("b", "boundaries/2/split"), ("b", "undo"),
+        ]:
+            response = client.post(
+                f"/collections/{collection_id}/review/{endpoint}",
+                data={"reviewer_name": "Alice"}, follow_redirects=False,
+            )
+            assert response.status_code == 303
+
+        root = client.get("/archive/").text
+        assert "6 pages · 3 collections · 4 edits" in root
+        assert "2 pages · 1 collection · 0 edits" in root
+        # An analyzed folder can also contain a subfolder listing.
+        box = client.get("/archive/box/").text
+        assert "2 pages · 1 collection · 1 edit" in box
+        assert "2 pages · 1 collection · 2 edits" in box
+        assert "2 pages · 1 collection · 2 edits" in client.get("/archive/box/nested/").text
+        assert " edits</span>" not in client.get("/preview/").text
+        assert storage.load_edit_counts(output) == {"parent": 1, "a": 1, "b": 2}
+
+    with TestClient(create_app(output)) as client:
+        assert "6 pages · 3 collections · 4 edits" in client.get("/archive/").text
+
+
 def test_browser_navigates_hierarchy_and_redirects_old_links(tmp_path: Path):
     output, source = tmp_path / "archive", tmp_path / "scans"
     storage.initialize(output)
