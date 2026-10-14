@@ -277,6 +277,10 @@ Your device's colour preference is the default, including changes while browsing
 An explicit choice is remembered on this device; use the monitor icon to follow the system again. Scanned images
 keep their original colours in either mode.
 
+On analyzed and preview pages, **Hide navigation** in the top bar collapses the left section or image
+list, giving the viewer more space. **Show navigation** brings it back. This preference is remembered
+on this device; the information and review column stays visible.
+
 The browser opens at `/archive/` and follows the archive's folder hierarchy. Each analyzed folder
 listing shows its recorded edit count, including edits in all descendant collections. Counts include
 Undo actions and each individual entry recovered from imported history, matching the rows in

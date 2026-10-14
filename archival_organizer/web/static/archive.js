@@ -18,6 +18,32 @@ document.querySelectorAll("details[data-disclosure]").forEach((details) => {
   });
 });
 
+const sidebarToggle = document.querySelector("#sidebar-toggle");
+
+if (sidebarToggle) {
+  const sidebarPanel = document.querySelector("#archive-sidebar");
+  const layout = sidebarPanel.closest(".layout");
+  const key = "archive-browser:sidebar";
+  const setSidebarVisible = (visible) => {
+    sidebarPanel.hidden = !visible;
+    layout.dataset.sidebarHidden = String(!visible);
+    sidebarToggle.setAttribute("aria-expanded", String(visible));
+    const label = visible ? "Hide navigation" : "Show navigation";
+    sidebarToggle.querySelector("span").textContent = label;
+    sidebarToggle.setAttribute("aria-label", label);
+    sidebarToggle.title = label;
+  };
+  let visible = true;
+  try { visible = localStorage.getItem(key) !== "hidden"; } catch {}
+  setSidebarVisible(visible);
+  sidebarToggle.disabled = false;
+  sidebarToggle.addEventListener("click", () => {
+    const visible = sidebarPanel.hidden;
+    setSidebarVisible(visible);
+    try { localStorage.setItem(key, visible ? "shown" : "hidden"); } catch {}
+  });
+}
+
 const filter = document.querySelector("#filter");
 
 if (filter) {

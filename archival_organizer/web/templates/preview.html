@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% from "macros.html" import breadcrumb, folder_list, image_viewer %}
+{% from "macros.html" import breadcrumb, folder_list, image_viewer, sidebar_toggle %}
 
 {% block title %}{{ filename }} · Preview{% endblock %}
 {% block body_class %}preview-page{% endblock %}
+{% block navigation_toggle %}{{ sidebar_toggle() }}{% endblock %}
 
 {% block body %}
 <div class="layout">
-  <aside>
+  <aside id="archive-sidebar">
     <div class="brand">Archive browser</div>
     <div class="brand-tagline">Preview · Original images</div>
     <p class="run-meta">{{ page_count }} images in this folder</p>

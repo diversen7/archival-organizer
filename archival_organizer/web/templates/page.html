@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% from "macros.html" import field, review_form, section_link, breadcrumb, folder_list, image_viewer %}
+{% from "macros.html" import field, review_form, section_link, breadcrumb, folder_list, image_viewer, sidebar_toggle %}
 
 {% block title %}Page {{ page_number }} · Archive browser{% endblock %}
+{% block navigation_toggle %}{{ sidebar_toggle() }}{% endblock %}
 
 {% block body %}
 <div class="layout">
-  <aside>
+  <aside id="archive-sidebar">
     <div class="brand">Archive browser</div>
     <div class="brand-tagline">Building better archives</div>
     <p class="run-meta">{{ run.page_count }} pages in {{ run.sections | length }} sections</p>

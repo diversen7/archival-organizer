@@ -8,6 +8,59 @@ const script = readFileSync(
   path.join(__dirname, "../archival_organizer/web/static/archive.js"), "utf8",
 );
 
+function loadSidebar(storage) {
+  const layout = { dataset: {} };
+  const panel = { hidden: false, closest: () => layout };
+  const label = { textContent: "Hide navigation" };
+  const button = { attributes: {}, disabled: true };
+  let click;
+  button.setAttribute = (key, value) => { button.attributes[key] = value; };
+  button.querySelector = () => label;
+  button.addEventListener = (event, callback) => { click = callback; };
+  runInNewContext(script, {
+    localStorage: storage,
+    document: {
+      querySelector: (selector) => ({ "#sidebar-toggle": button, "#archive-sidebar": panel })[selector] ?? null,
+      querySelectorAll: () => [],
+    },
+  });
+  return { layout, panel, label, button, click: () => click() };
+}
+
+test("navigation toggle hides the column, restores it, and remembers the choice across pages", () => {
+  const saved = new Map();
+  const storage = {
+    getItem: (key) => saved.get(key),
+    setItem: (key, value) => saved.set(key, value),
+  };
+  const page = loadSidebar(storage);
+  assert.equal(page.panel.hidden, false);
+  assert.equal(page.button.disabled, false);
+  page.click();
+  assert.equal(page.panel.hidden, true);
+  assert.equal(page.layout.dataset.sidebarHidden, "true");
+  assert.equal(page.button.attributes["aria-expanded"], "false");
+  assert.equal(page.label.textContent, "Show navigation");
+  const next = loadSidebar(storage);
+  assert.equal(next.panel.hidden, true);
+  next.click();
+  assert.equal(next.panel.hidden, false);
+  assert.equal(next.layout.dataset.sidebarHidden, "false");
+  assert.equal(next.button.attributes["aria-expanded"], "true");
+  assert.equal(next.label.textContent, "Hide navigation");
+  assert.equal(loadSidebar(storage).panel.hidden, false);
+});
+
+test("navigation toggle still works when storage is unavailable", () => {
+  const fail = () => { throw new Error("Storage blocked"); };
+  const page = loadSidebar({ getItem: fail, setItem: fail });
+  assert.equal(page.panel.hidden, false);
+  page.click();
+  assert.equal(page.panel.hidden, true);
+  page.click();
+  assert.equal(page.panel.hidden, false);
+});
+
 function loadPage(storage, defaults) {
   const sections = Object.entries(defaults).map(([name, open]) => ({
     dataset: { disclosure: name },
