@@ -17,6 +17,9 @@ dependencies = [
 archival-organizer = "archival_organizer.cli:main"
 archival-browser = "archival_organizer.viewer:main"
 
+[tool.bump_version]
+uv_lock = true
+
 [dependency-groups]
 dev = ["pytest>=8.0.0"]
 
