@@ -26,6 +26,16 @@ from archival_organizer.viewer import (
 )
 
 
+def _visible_text(html: str) -> str:
+    class Text(HTMLParser):
+        def handle_data(self, data: str) -> None:
+            parts.append(data)
+
+    parts: list[str] = []
+    Text().feed(html)
+    return "".join(parts)
+
+
 class FakeLabelAI:
     def __init__(self) -> None:
         self.calls: list[list[int]] = []
@@ -292,8 +302,8 @@ def test_history_recovers_individual_legacy_adjustments_and_move(tmp_path: Path)
     before = storage.load_collection_data(output, "default")
     with TestClient(create_app(output)) as client:
         rendered = client.get("/collections/default/history").text
-        assert "2 pages · 1 collection · 4 edits" in client.get("/archive/").text
-        assert "2 pages · 1 collection · 4 edits" in client.get("/archive/box/").text
+        assert "2 pages · 1 collection · 4 edits" in _visible_text(client.get("/archive/").text)
+        assert "2 pages · 1 collection · 4 edits" in _visible_text(client.get("/archive/box/").text)
     assert rendered.count("<td>John Doe</td>") == 4
     assert rendered.count("Split before page 2.png") == 2
     assert rendered.count("Joined before page 2.png") == 1
@@ -312,8 +322,8 @@ def test_history_recovers_individual_legacy_adjustments_and_move(tmp_path: Path)
         assert history.count("<td>John Doe</td>") == 4
         assert history.count("<td>Dennis</td>") == 2
         assert len(storage.load_edit_history(output, "default")) == 3
-        assert "2 pages · 1 collection · 6 edits" in client.get("/archive/").text
-        assert "2 pages · 1 collection · 6 edits" in client.get("/archive/box/").text
+        assert "2 pages · 1 collection · 6 edits" in _visible_text(client.get("/archive/").text)
+        assert "2 pages · 1 collection · 6 edits" in _visible_text(client.get("/archive/box/").text)
 
 
 def test_history_does_not_guess_which_page_moved_in_ambiguous_swap():
@@ -383,8 +393,11 @@ def test_viewer_renders_page_metadata_and_images(tmp_path: Path):
     assert "Label review" not in rendered
     assert "Grouping review" not in rendered
     assert 'id="page-strip"' in rendered
+    assert "Page 2 of 2 in this section" in rendered
+    assert 'class="image-stack"' in rendered
     assert 'data-previous-url="/?page=1#page-strip"' in rendered
     first_page = _render_page(run, 1)
+    assert "Page 1 of 2 in this section" in first_page
     assert 'data-next-url="/?page=2#page-strip"' in first_page
     assert 'href="/?page=2#page-strip"' in first_page
     asset_version = templates.env.globals["asset_version"]
@@ -482,6 +495,11 @@ def test_move_page_form_and_route(tmp_path: Path):
         page = client.get("/collections/default/?page=2")
         assert 'action="/collections/default/review/pages/2/move"' in page.text
         assert 'name="target_page"' in page.text
+        assert "Page 2 of 2 in this section" in client.get("/archive/?page=4").text
+        single_page = client.get("/archive/?page=5").text
+        assert "Single-page section" in single_page
+        assert 'class="image-stack"' not in single_page
+        assert 'class="section-navigation multi-page"' not in single_page
         assert (
             page.text.index('class="page-strip"')
             < page.text.index('class="viewer"')
@@ -607,7 +625,7 @@ def test_archive_folder_edit_counts_aggregate_and_update(tmp_path: Path):
         _add_sample_collection(output, source / path, collection_id, path)
 
     with TestClient(create_app(output, source)) as client:
-        assert "6 pages · 3 collections · 0 edits" in client.get("/archive/").text
+        assert "6 pages · 3 collections · 0 edits" in _visible_text(client.get("/archive/").text)
         for collection_id, endpoint in [
             ("parent", "pages/1/flag"), ("a", "pages/1/flag"),
             ("b", "boundaries/2/split"), ("b", "undo"),
@@ -619,20 +637,20 @@ def test_archive_folder_edit_counts_aggregate_and_update(tmp_path: Path):
             assert response.status_code == 303
 
         root = client.get("/archive/").text
-        assert "6 pages · 3 collections · 4 edits" in root
-        assert "2 pages · 1 collection · 0 edits" in root
+        assert "6 pages · 3 collections · 4 edits" in _visible_text(root)
+        assert "2 pages · 1 collection · 0 edits" in _visible_text(root)
         # An analyzed folder can also contain a subfolder listing.
         box = client.get("/archive/box/").text
-        assert "2 pages · 1 collection · 1 edit" in box
-        assert "2 pages · 1 collection · 2 edits" in box
-        assert "2 pages · 1 collection · 2 edits" in client.get("/archive/box/nested/").text
-        assert " edits</span>" not in client.get("/preview/").text
+        assert "2 pages · 1 collection · 1 edit" in _visible_text(box)
+        assert "2 pages · 1 collection · 2 edits" in _visible_text(box)
+        assert "2 pages · 1 collection · 2 edits" in _visible_text(client.get("/archive/box/nested/").text)
+        assert "has-edit-counts" not in client.get("/preview/").text
         assert {key: len(storage.load_edit_history(output, key)) for key in ("parent", "a", "b")} == {
             "parent": 1, "a": 1, "b": 2,
         }
 
     with TestClient(create_app(output)) as client:
-        assert "6 pages · 3 collections · 4 edits" in client.get("/archive/").text
+        assert "6 pages · 3 collections · 4 edits" in _visible_text(client.get("/archive/").text)
 
 
 def test_browser_navigates_hierarchy_and_redirects_old_links(tmp_path: Path):
@@ -651,7 +669,7 @@ def test_browser_navigates_hierarchy_and_redirects_old_links(tmp_path: Path):
         assert 'href="/archive/91%2B01011-4/"' in root.text
         assert "part2" not in root.text
         assert "not-analyzed" not in root.text
-        assert "4 pages · 2 collections" in root.text
+        assert "4 pages · 2 collections" in _visible_text(root.text)
 
         parent = client.get("/archive/91%2B01011-3/")
         assert parent.status_code == 200

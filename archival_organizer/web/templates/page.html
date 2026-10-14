@@ -36,14 +36,20 @@
     </div>
 
     <div class="page-content" id="page-strip">
-      <div class="page-strip" aria-label="Pages in this section">
-        {% for number in section_pages %}
-          <a class="page-pill{% if number == page_number %} active{% endif %}" href="{{ base_url }}/?page={{ number }}#page-strip">{{ number }}</a>
-        {% endfor %}
+      {% set section_page_count = section_pages | length %}
+      <div class="section-navigation{% if section_page_count > 1 %} multi-page{% endif %}">
+        <p class="section-page-badge">
+          {% if section_page_count > 1 %}Page {{ page_number - (section.start_page | int) + 1 }} of {{ section_page_count }} in this section{% else %}Single-page section{% endif %}
+        </p>
+        <nav class="page-strip" aria-label="Pages in this section">
+          {% for number in section_pages %}
+            <a class="page-pill{% if number == page_number %} active{% endif %}"{% if number == page_number %} aria-current="page"{% endif %} href="{{ base_url }}/?page={{ number }}#page-strip">{{ number }}</a>
+          {% endfor %}
+        </nav>
       </div>
 
       <div class="viewer">
-        {{ image_viewer(image_url, original_url, page_number, previous_url, next_url) }}
+        {{ image_viewer(image_url, original_url, page_number, previous_url, next_url, multi_page=section_page_count > 1) }}
 
         <div>
           {% include "browser_controls.html" %}
