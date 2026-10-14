@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import hashlib
 import json
@@ -108,7 +108,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Redo extraction, grouping, and labels for selected collections",
     )
     analyze.add_argument(
-        "--workers", type=_positive_int, default=4, help="Concurrent requests for uncached page analysis"
+        "--workers", type=_positive_int, default=4,
+        help="Concurrent requests per stage for uncached pages, boundary batches, and label batches"
     )
     analyze.add_argument(
         "--boundary-batch", type=_positive_int, default=24, help="Transitions per boundary request"
@@ -308,30 +309,42 @@ def _load_or_analyze_pages(
     return [page for page in pages if page is not None]
 
 
-def _cached_boundary_request(
-    output_dir: Path,
-    model: str,
-    prompt: str,
-    request: Callable[[], list[dict[str, Any]]],
-    *,
-    refresh: bool,
-    description: str,
-) -> list[dict[str, Any]]:
-    material = json.dumps(
-        {"model": model, "prompt": prompt, "schema": BOUNDARY_SCHEMA},
-        sort_keys=True, ensure_ascii=False,
-    )
-    cache_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
-    cached = None if refresh else storage.load_boundary_batch(output_dir, cache_key)
-    if cached is not None:
-        print(f"[boundaries] cached: {description}", flush=True)
-        return cached
-    print(f"[boundaries] {description}...", flush=True)
-    started = time.perf_counter()
-    decisions = request()
-    storage.save_boundary_batch(output_dir, cache_key, decisions)
-    print(f"[boundaries] {description} complete ({time.perf_counter() - started:.1f}s)", flush=True)
-    return decisions
+def _run_batch_requests(
+    jobs: Iterable[tuple[Callable[[], Any], Callable[[Any], None]]], workers: int,
+) -> None:
+    """Run only requests in workers; prepare jobs and persist results on the caller thread.
+
+    Stop submitting on failure, but save successful requests already in flight before raising.
+    """
+    remaining = iter(jobs)
+    failure: Exception | None = None
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="batch-analysis") as executor:
+        futures: dict[Future, Callable[[Any], None]] = {}
+        exhausted = False
+        while True:
+            while failure is None and not exhausted and len(futures) < workers:
+                try:
+                    job = next(remaining, None)
+                except Exception as exc:
+                    failure = exc
+                    break
+                if job is None:
+                    exhausted = True
+                    break
+                invoke, save = job
+                futures[executor.submit(invoke)] = save
+            if not futures:
+                break
+            completed, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for future in completed:
+                save = futures.pop(future)
+                try:
+                    save(future.result())
+                except Exception as exc:
+                    if failure is None:
+                        failure = exc
+    if failure is not None:
+        raise failure
 
 
 def _process_collection(
@@ -397,7 +410,7 @@ def _process_collection(
         source_hashes=hashes, preferred_analyses=preferred, resume_from=resume_from,
     )
 
-    def boundary_request(stage, prompt, invoke, description):
+    def boundary_job(stage, prompt, invoke, description, consume):
         input_key = incremental.key({"prompt": prompt, "schema": BOUNDARY_SCHEMA})
         forced = request["boundaries"]
         cached = incremental.reuse(
@@ -408,12 +421,29 @@ def _process_collection(
             value, model = cached
             print(f"[boundaries] cached: {description} (from {model})", flush=True)
         else:
-            value = _cached_boundary_request(
-                output_dir, args.model, prompt, invoke, refresh=forced, description=description,
+            material = json.dumps(
+                {"model": args.model, "prompt": prompt, "schema": BOUNDARY_SCHEMA},
+                sort_keys=True, ensure_ascii=False,
             )
+            cache_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
+            value = None if forced else storage.load_boundary_batch(output_dir, cache_key)
             model = args.model
+            if value is None:
+                print(f"[boundaries] {description}...", flush=True)
+                started = time.perf_counter()
+
+                def save(value):
+                    storage.save_boundary_batch(output_dir, cache_key, value)
+                    incremental.remember(output_dir, run_id, stage, input_key, model, value)
+                    consume(value)
+                    print(f"[boundaries] {description} complete "
+                          f"({time.perf_counter() - started:.1f}s)", flush=True)
+
+                return invoke, save
+            print(f"[boundaries] cached: {description}", flush=True)
         incremental.remember(output_dir, run_id, stage, input_key, model, value)
-        return value
+        consume(value)
+        return None
 
     if unchanged and not refresh_pages and not request["boundaries"]:
         # Label-only requests must not reconsider extraction or grouping.
@@ -422,13 +452,7 @@ def _process_collection(
     else:
         boundaries: dict[int, dict] = {}
         # Each batch includes one left-context page, so every internal transition is evaluated once.
-        for start in range(0, len(pages) - 1, args.boundary_batch):
-            window = pages[start : min(len(pages), start + args.boundary_batch + 1)]
-            returned = boundary_request(
-                "boundaries", boundary_request_prompt(window),
-                lambda: ai.decide_boundaries(window),
-                description=f"deciding pages {window[0]['page']}-{window[-1]['page']}",
-            )
+        def consume_boundaries(window, returned):
             for item in returned:
                 right = int(item["right_page"])
                 if window[0]["page"] < right <= window[-1]["page"]:
@@ -440,14 +464,33 @@ def _process_collection(
                     "confidence": 0.0,
                     "reason": "Model omitted this boundary; conservative fallback requires review.",
                 })
+
+        def boundary_jobs():
+            for start in range(0, len(pages) - 1, args.boundary_batch):
+                window = pages[start : min(len(pages), start + args.boundary_batch + 1)]
+                job = boundary_job(
+                    "boundaries", boundary_request_prompt(window),
+                    lambda window=window: ai.decide_boundaries(window),
+                    description=f"deciding pages {window[0]['page']}-{window[-1]['page']}",
+                    consume=lambda returned, window=window: consume_boundaries(window, returned),
+                )
+                if job is not None:
+                    yield job
+
+        _run_batch_requests(boundary_jobs(), args.workers)
         audit_reasons = suspicious_split_reasons(pages, boundaries)
         if audit_reasons:
             page_list = ", ".join(str(page) for page in audit_reasons)
-            returned = boundary_request(
+            returned = []
+            job = boundary_job(
                 "boundary-review", boundary_review_request_prompt(pages, boundaries, audit_reasons),
                 lambda: ai.review_boundaries(pages, boundaries, audit_reasons),
                 description=f"rechecking contradictory splits before pages {page_list}",
+                consume=returned.extend,
             )
+            if job is not None:
+                invoke, save = job
+                save(invoke())
             reviewed = {
                 int(item["right_page"]): item
                 for item in returned
@@ -480,10 +523,8 @@ def _process_collection(
             labels[index] = dict(label, group=index + 1)
             incremental.remember(output_dir, run_id, "labels", input_key, model, label)
             print(f"[labels] cached: group {index + 1} (from {model})", flush=True)
-    for start in range(0, len(missing), args.label_batch):
-        batch = missing[start:start + args.label_batch]
-        print(f"[labels] labeling {len(batch)} changed/unfinished group(s)...", flush=True)
-        returned = ai.label_groups([group for _, group, _ in batch], 1)
+
+    def save_labels(batch, returned):
         by_number = {int(item["group"]): item for item in returned}
         for number, (index, _group, input_key) in enumerate(batch, start=1):
             if number not in by_number:
@@ -491,6 +532,17 @@ def _process_collection(
             label = {k: v for k, v in by_number[number].items() if k != "group"}
             incremental.remember(output_dir, run_id, "labels", input_key, args.model, label)
             labels[index] = dict(label, group=index + 1)
+
+    def label_jobs():
+        for start in range(0, len(missing), args.label_batch):
+            batch = missing[start:start + args.label_batch]
+            print(f"[labels] labeling {len(batch)} changed/unfinished group(s)...", flush=True)
+            yield (
+                lambda batch=batch: ai.label_groups([group for _, group, _ in batch], 1),
+                lambda returned, batch=batch: save_labels(batch, returned),
+            )
+
+    _run_batch_requests(label_jobs(), args.workers)
 
     current_paths = discover_pages(input_dir)
     if args.limit:

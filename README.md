@@ -79,9 +79,12 @@ uv run archival-organizer analyze /mnt/data2/melica-png \
   --output /home/azks430/melica-output --collection '91+01011-3' --limit 20
 ```
 
-Uncached page analysis uses four concurrent API requests by default. Adjust this for local resources or API
-rate limits with `--workers N`; use `--workers 1` for sequential processing. Cached pages do not occupy a
-worker.
+Page analysis, boundary detection batches, and document labeling batches each use up to four concurrent
+API requests by default. Adjust this for local resources or API rate limits with `--workers N`; use
+`--workers 1` for sequential processing. Cached results do not occupy a worker. `--boundary-batch` and
+`--label-batch` control the size of each request. Stages and collections run in order; boundary review
+waits for boundary detection to finish, and labeling waits for grouping. Database writes remain sequential.
+If a batch fails, new requests stop and successful requests already running are saved for a rerun.
 
 Start with a small sample before processing the whole box:
 
