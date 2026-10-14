@@ -272,6 +272,11 @@ snapshots recover individual grouping adjustments and page moves where possible.
 show the recovered page order. Earlier removed flags and undone changes whose records were deleted
 cannot be recovered.
 
+Use the sun/moon switch under **Appearance** at the top of any browser page to toggle light and dark.
+Your device's colour preference is the default, including changes while browsing.
+An explicit choice is remembered on this device; use the monitor icon to follow the system again. Scanned images
+keep their original colours in either mode.
+
 The browser opens at `/archive/` and follows the archive's folder hierarchy. Each analyzed folder
 listing shows its recorded edit count, including edits in all descendant collections. Counts include
 Undo actions and each individual entry recovered from imported history, matching the rows in

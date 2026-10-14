@@ -4,9 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Archive browser{% endblock %}</title>
+  <script src="/static/theme.js?v={{ asset_version | urlencode }}"></script>
   <link rel="stylesheet" href="/static/archive.css?v={{ asset_version | urlencode }}">
 </head>
 <body class="{% block body_class %}{% endblock %}">
+  <div class="appearance-bar">
+    <span>Appearance</span>
+    <button id="theme-mode" class="theme-switch" type="button" role="switch" aria-label="Dark mode" aria-checked="false" disabled>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A9 9 0 0 1 9.5 3.5a9 9 0 1 0 11 11Z"/></svg>
+    </button>
+    <button id="theme-system" class="theme-system" type="button" aria-label="Use system appearance" title="Use system appearance" aria-pressed="true" disabled>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="1"/><path d="M12 17v4m-4 0h8"/></svg>
+    </button>
+  </div>
   {% block body %}{% endblock %}
   <script src="/static/archive.js?v={{ asset_version | urlencode }}" defer></script>
 </body>
