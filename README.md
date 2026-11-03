@@ -37,6 +37,9 @@ export OPENAI_API_KEY="your-key"
 uv run archival-organizer analyze input/sample-scans-img --output output/sample-scans
 ```
 
+`analyze` requires a nonblank `OPENAI_API_KEY` and fails before scanning inputs or changing the output
+if it is missing, even when all collections would otherwise be skipped.
+
 Database schemas from version 4 onward upgrade automatically when starting analysis, relabelling, or the
 browser. Upgrades preserve existing page analyses, completed runs, and review edits, and roll back if an
 upgrade fails. Archives older than version 4 still require a fresh output directory; archives from newer

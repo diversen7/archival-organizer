@@ -567,6 +567,9 @@ def _process_collection(
 
 
 def _run_analysis(args: argparse.Namespace) -> None:
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        raise SystemExit("Set OPENAI_API_KEY before running the analyzer.")
+
     if not args.input.is_dir():
         raise SystemExit(f"Input directory does not exist: {args.input}")
 

@@ -39,12 +39,16 @@ def test_finished_collection_is_untouched_by_new_model_and_prompt(archive, monke
         assert list(db.iterdump()) == database_before
 
 
-def test_all_finished_requires_no_api_key_or_client(archive, monkeypatch):
+def test_all_finished_requires_api_key_but_no_client(archive, monkeypatch):
     source, output = archive
     run(archive, RecordingAI())
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
     monkeypatch.setattr(cli, 'ArchiveAI', lambda _: pytest.fail('No API client for skipped work'))
-    cli._run_analysis(cli.parse_args(['analyze', str(source), '--output', str(output), '--model', 'new']))
+    args = cli.parse_args(['analyze', str(source), '--output', str(output), '--model', 'new'])
+    with pytest.raises(SystemExit, match='Set OPENAI_API_KEY'):
+        cli._run_analysis(args)
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
+    cli._run_analysis(args)
     with storage.connect(output) as db:
         assert db.execute('SELECT COUNT(*) FROM analysis_runs').fetchone()[0] == 1
 

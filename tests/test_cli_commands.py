@@ -7,6 +7,22 @@ import pytest
 from archival_organizer import cli
 
 
+@pytest.mark.parametrize("key", [None, "", " \t\n"])
+def test_analyze_requires_key_before_discovery(tmp_path, monkeypatch, key):
+    if key is None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_API_KEY", key)
+    monkeypatch.setattr(
+        cli, "discover_collections", lambda _: pytest.fail("Must fail before discovery")
+    )
+    output = tmp_path / "output"
+    args = cli.parse_args(["analyze", str(tmp_path), "--output", str(output)])
+    with pytest.raises(SystemExit, match="Set OPENAI_API_KEY"):
+        cli._run_analysis(args)
+    assert not output.exists()
+
+
 def test_cli_uses_analyze_and_relabel_subcommands():
     analyze = cli.parse_args(["analyze", "/scans"])
     relabel = cli.parse_args([
