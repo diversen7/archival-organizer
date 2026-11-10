@@ -30,4 +30,4 @@ package = true
 include = ["archival_organizer*"]
 
 [tool.setuptools.package-data]
-archival_organizer = ["web/templates/*.html", "web/static/*"]
+archival_organizer = ["web/templates/*.html", "web/static/*", "export_readme.md"]

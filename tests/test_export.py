@@ -69,7 +69,11 @@ def test_complete_export_preserves_history_and_reviews(collection_archive, tmp_p
     assert next(p for p in pages if p['collection_id'] == cid and p['position'] == 2)[
         'boundary_before']['review_source'] == 'human'
     assert 'Åse' in (destination / 'history/edit_history.jsonl').read_text()
-    assert all(p.suffix in {'.json', '.jsonl'} for p in destination.rglob('*') if p.is_file())
+    guide = (destination / 'README.md').read_text(encoding='utf-8')
+    assert 'Instructions for an LLM implementing an importer' in guide
+    assert 'manifest.json' in guide
+    assert 'configured_image_root / page.image_path' in guide
+    assert all(p.suffix in {'.json', '.jsonl', '.md'} for p in destination.rglob('*') if p.is_file())
 
 
 def test_failure_cleanup_and_existing_destination(collection_archive, tmp_path, monkeypatch):

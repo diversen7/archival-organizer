@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import ExitStack, closing
 from datetime import datetime, timezone
+from importlib.resources import files
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import sqlite3
@@ -225,6 +226,10 @@ def export_archive(
         }
         (bundle / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        (bundle / "README.md").write_text(
+            files("archival_organizer").joinpath("export_readme.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
         )
         total_bytes = sum(path.stat().st_size for path in bundle.rglob("*") if path.is_file())
         report("[export] Publishing completed export...")

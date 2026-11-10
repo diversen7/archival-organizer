@@ -343,7 +343,7 @@ uv run archival-browser output/sample-scans/ --input /path/to/scans --port 8002
 ## Export all data for another system
 
 ```bash
-uv run archival-organizer export /home/azks430/melica-output --destination archive-export
+uv run archival-organizer export /home/azks430/melica-output --destination /home/azks430/archive-export
 ```
 
 The source directory `/home/azks430/melica-output` contains `archive.sqlite3`.
@@ -364,6 +364,9 @@ writing to temporary files; the destination appears only when the export is publ
 
 The UTF-8 bundle uses JSONL (one JSON object per line) for records and JSON for its manifest:
 
+- `README.md` explains the format, relationships, image paths, history, and validation requirements,
+  and includes copyable instructions for an LLM implementing an importer in another project. Give the
+  recipient the entire export folder and ask them to start with its `README.md`.
 - `manifest.json` declares `export_version` (currently `1`), the source and current-view database schema
   versions, export time, per-file record counts, and each historical table's columns and foreign keys.
 - `collections.jsonl` includes every collection, its relative folder path, latest completed run ID
