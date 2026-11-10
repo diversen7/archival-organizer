@@ -20,7 +20,7 @@ def database_rows(output):
                 for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
 
-def test_complete_export_preserves_history_and_reviews(collection_archive, tmp_path, monkeypatch):
+def test_complete_export_preserves_history_and_reviews(collection_archive, tmp_path, monkeypatch, capsys):
     source, output, _, run = collection_archive
     run()
     collection = next(c for c in storage.list_collections(output) if c['relative_path'] == 'dir2')
@@ -42,6 +42,12 @@ def test_complete_export_preserves_history_and_reviews(collection_archive, tmp_p
     manifest = json.loads((destination / 'manifest.json').read_text())
     assert manifest['export_version'] == 1
     assert manifest['images_included'] is False
+    progress = capsys.readouterr().out
+    assert '[export] Database snapshot: 100%' in progress
+    assert '[export] History table' in progress
+    assert '[export] Reviewed collection 4/4:' in progress
+    assert f"Complete: {sum(manifest['record_counts'].values()):,} JSONL records" in progress
+    assert 'MiB in' in progress
     for table, rows in before.items():
         exported = read_rows(destination, f'history/{table}')
         assert len(exported) == len(rows) == manifest['record_counts'][f'history/{table}.jsonl']

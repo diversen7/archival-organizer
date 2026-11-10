@@ -343,14 +343,24 @@ uv run archival-browser output/sample-scans/ --input /path/to/scans --port 8002
 ## Export all data for another system
 
 ```bash
-uv run archival-organizer export archive-output --destination archive-export
+uv run archival-organizer export /home/azks430/melica-output --destination archive-export
 ```
+
+The source directory `/home/azks430/melica-output` contains `archive.sqlite3`.
 
 The destination must be a new directory. Export requires neither an API key nor access to the original
 images. It copies no images or thumbnails. It reads a consistent SQLite snapshot, including committed
 changes in the WAL, and leaves the source database unchanged. Versions 4 through the current schema
 version are supported: any upgrades needed to build the reviewed view happen only on a temporary copy.
 Failed exports clean up temporary files; a completed bundle is published by a directory rename.
+
+The command prints progress as it runs: snapshot percentage, history table numbers, records and MiB
+written per table, and reviewed collection numbers with cumulative page and document counts. During
+JSONL writing, updates appear every 1,000 records or approximately every two seconds (checked after each
+record), and at table/collection completion. Messages are flushed immediately, including when output is
+redirected to a log. The final summary reports total JSONL records and bundle size in MiB; record totals
+include both the reviewed view and history, so they are not a count of unique pages. Progress reports
+writing to temporary files; the destination appears only when the export is published.
 
 The UTF-8 bundle uses JSONL (one JSON object per line) for records and JSON for its manifest:
 

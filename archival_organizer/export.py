@@ -1,11 +1,13 @@
 """Portable JSONL exports from a private, consistent SQLite snapshot."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import ExitStack, closing
 from datetime import datetime, timezone
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import sqlite3
+import time
 from tempfile import TemporaryDirectory
 from typing import Any, Iterable
 
@@ -17,6 +19,10 @@ from .review import effective_sections
 EXPORT_VERSION = 1
 
 
+def _silent(message: str) -> None:
+    pass
+
+
 def _relative_path(*parts: str) -> str:
     for part in parts:
         if (PurePosixPath(part).is_absolute() or PureWindowsPath(part).drive
@@ -25,12 +31,20 @@ def _relative_path(*parts: str) -> str:
     return PurePosixPath(*parts).as_posix()
 
 
-def _write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> int:
+def _write_jsonl(
+    path: Path, rows: Iterable[dict[str, Any]], report: Callable[[str], None] = _silent,
+) -> int:
     count = 0
+    last_report = time.monotonic()
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
             count += 1
+            if count % 1000 == 0 or time.monotonic() - last_report >= 2:
+                handle.flush()
+                report(f"[export] {path.name}: {count:,} records, {handle.tell() / 1024**2:.2f} MiB written")
+                last_report = time.monotonic()
+    report(f"[export] {path.name}: complete — {count:,} records, {path.stat().st_size / 1024**2:.2f} MiB")
     return count
 
 
@@ -38,14 +52,17 @@ def _quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def _history(database: sqlite3.Connection, directory: Path) -> tuple[dict, dict]:
+def _history(
+    database: sqlite3.Connection, directory: Path, report: Callable[[str], None] = _silent,
+) -> tuple[dict, dict]:
     directory.mkdir()
     counts, schemas = {}, {}
     tables = database.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     ).fetchall()
-    for table_row in tables:
+    for index, table_row in enumerate(tables, start=1):
         table = table_row[0]
+        report(f"[export] History table {index}/{len(tables)}: {table}")
         # Only ordinary table identifiers may become filenames.
         if not table.replace("_", "").isalnum():
             raise ValueError(f"Unsupported table name: {table!r}")
@@ -70,20 +87,36 @@ def _history(database: sqlite3.Connection, directory: Path) -> tuple[dict, dict]
                     _relative_path(record["filename"])
                 yield record
 
-        counts[f"history/{table}.jsonl"] = _write_jsonl(directory / f"{table}.jsonl", records())
+        counts[f"history/{table}.jsonl"] = _write_jsonl(directory / f"{table}.jsonl", records(), report)
     return counts, schemas
 
 
-def _current(snapshot: Path, directory: Path) -> dict[str, int]:
+def _current(
+    snapshot: Path, directory: Path, report: Callable[[str], None] = _silent,
+) -> dict[str, int]:
     counts = {f"{name}.jsonl": 0 for name in ("collections", "pages", "documents")}
     with ExitStack() as stack:
         handles = {name: stack.enter_context((directory / name).open("w", encoding="utf-8", newline="\n"))
                    for name in counts}
 
+        last_report = time.monotonic()
+
+        def progress():
+            for handle in handles.values():
+                handle.flush()
+            size = sum(handle.tell() for handle in handles.values())
+            report(f"[export] Reviewed view: {counts['collections.jsonl']:,} collections, "
+                   f"{counts['pages.jsonl']:,} pages, {counts['documents.jsonl']:,} documents; "
+                   f"{size / 1024**2:.2f} MiB written")
+
         def write(name, record):
+            nonlocal last_report
             filename = f"{name}.jsonl"
             handles[filename].write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
             counts[filename] += 1
+            if sum(counts.values()) % 1000 == 0 or time.monotonic() - last_report >= 2:
+                progress()
+                last_report = time.monotonic()
 
         with storage.connect(snapshot) as database:
             collections = [dict(row) for row in database.execute("SELECT * FROM collections ORDER BY id")]
@@ -91,15 +124,17 @@ def _current(snapshot: Path, directory: Path) -> dict[str, int]:
                 "SELECT collection_id, MAX(id) AS run_id FROM analysis_runs "
                 "WHERE completed_at IS NOT NULL GROUP BY collection_id"
             )}
-        for collection in collections:
+        for index, collection in enumerate(collections, start=1):
             collection_id = collection["id"]
             relative = _relative_path(collection["relative_path"])
+            report(f"[export] Reviewed collection {index}/{len(collections)}: {relative}")
             collection.update(relative_path=relative, input_directory=relative)
             run_id = latest.get(collection_id)
             data = storage.load_collection_data(snapshot, collection_id) if run_id is not None else None
             write("collections", dict(collection, latest_completed_run_id=run_id,
                                       review_warnings=data["review_warnings"] if data else []))
             if data is None:
+                progress()
                 continue
             pages = {page["page"]: page for page in data["pages"]}
             boundaries = {item["right_page"]: item for item in data["boundaries"]}
@@ -128,10 +163,13 @@ def _current(snapshot: Path, directory: Path) -> dict[str, int]:
                                      if key not in {"page_id", "page", "file"}},
                         "boundary_before": boundaries.get(position),
                     })
+            progress()
     return counts
 
 
-def export_archive(output: Path, destination: Path) -> Path:
+def export_archive(
+    output: Path, destination: Path, *, report: Callable[[str], None] = _silent,
+) -> Path:
     """Export all stored records and the current reviewed view, without changing the archive."""
     source = output.resolve() / storage.DATABASE_NAME
     destination = destination.absolute()
@@ -145,9 +183,19 @@ def export_archive(output: Path, destination: Path) -> Path:
         snapshot = working / "snapshot"
         snapshot.mkdir()
         snapshot_file = snapshot / storage.DATABASE_NAME
+        report("[export] Creating consistent database snapshot...")
+        last_snapshot_report = time.monotonic()
+
+        def snapshot_progress(status, remaining, total):
+            nonlocal last_snapshot_report
+            if remaining == 0 or time.monotonic() - last_snapshot_report >= 2:
+                percent = 100 * (total - remaining) / total if total else 100
+                report(f"[export] Database snapshot: {percent:.0f}%")
+                last_snapshot_report = time.monotonic()
+
         with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as original:
             with closing(sqlite3.connect(snapshot_file)) as copy:
-                original.backup(copy)
+                original.backup(copy, pages=1024, progress=snapshot_progress)
         with closing(sqlite3.connect(snapshot_file)) as database:
             database.row_factory = sqlite3.Row
             try:
@@ -161,10 +209,11 @@ def export_archive(output: Path, destination: Path) -> Path:
                                  f"{BASE_SCHEMA_VERSION}–{SCHEMA_VERSION}")
             bundle = working / "bundle"
             bundle.mkdir()
-            counts, schemas = _history(database, bundle / "history")
+            counts, schemas = _history(database, bundle / "history", report)
         # Upgrade only the disposable snapshot to reuse the application's review logic.
+        report("[export] Preparing current reviewed view...")
         storage.initialize(snapshot)
-        counts.update(_current(snapshot, bundle))
+        counts.update(_current(snapshot, bundle, report))
         manifest = {
             "format": "archival-organizer", "export_version": EXPORT_VERSION,
             "source_schema_version": version, "current_view_schema_version": SCHEMA_VERSION,
@@ -177,6 +226,8 @@ def export_archive(output: Path, destination: Path) -> Path:
         (bundle / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
+        total_bytes = sum(path.stat().st_size for path in bundle.rglob("*") if path.is_file())
+        report("[export] Publishing completed export...")
         # Reserve the destination exclusively, including against concurrent exporters.
         destination.mkdir()
         try:
@@ -184,4 +235,6 @@ def export_archive(output: Path, destination: Path) -> Path:
         except BaseException:
             destination.rmdir()
             raise
+    report(f"[export] Complete: {sum(counts.values()):,} JSONL records, "
+           f"{total_bytes / 1024**2:.2f} MiB in {destination}")
     return destination

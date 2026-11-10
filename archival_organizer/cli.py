@@ -742,9 +742,10 @@ def main() -> None:
         from .export import export_archive
 
         try:
-            destination = export_archive(args.output, args.destination)
+            export_archive(
+                args.output, args.destination, report=lambda message: print(message, flush=True),
+            )
         except (OSError, ValueError, sqlite3.Error) as exc:
             raise SystemExit(str(exc)) from None
-        print(f"Exported archive data to {destination}")
     else:
         _run_relabel(args)
