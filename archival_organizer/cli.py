@@ -6,6 +6,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import hashlib
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     relabel.add_argument(
         "--label-batch", type=_positive_int, default=16, help="Groups per labelling request"
     )
+    export = commands.add_parser("export", help="Export all archive data as portable JSONL, without images")
+    export.add_argument("output", type=Path, help="Archive directory containing archive.sqlite3")
+    export.add_argument("--destination", type=Path, required=True, help="New directory for the export")
     return parser.parse_args(argv)
 
 
@@ -734,5 +738,13 @@ def main() -> None:
             _run_analysis(args)
         except PageAnalysisError as exc:
             raise SystemExit(str(exc)) from None
+    elif args.command == "export":
+        from .export import export_archive
+
+        try:
+            destination = export_archive(args.output, args.destination)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            raise SystemExit(str(exc)) from None
+        print(f"Exported archive data to {destination}")
     else:
         _run_relabel(args)

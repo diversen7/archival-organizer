@@ -339,3 +339,49 @@ Providing `--input` also enables Preview / Analyzed switching:
 ```bash
 uv run archival-browser output/sample-scans/ --input /path/to/scans --port 8002
 ```
+
+## Export all data for another system
+
+```bash
+uv run archival-organizer export archive-output --destination archive-export
+```
+
+The destination must be a new directory. Export requires neither an API key nor access to the original
+images. It copies no images or thumbnails. It reads a consistent SQLite snapshot, including committed
+changes in the WAL, and leaves the source database unchanged. Versions 4 through the current schema
+version are supported: any upgrades needed to build the reviewed view happen only on a temporary copy.
+Failed exports clean up temporary files; a completed bundle is published by a directory rename.
+
+The UTF-8 bundle uses JSONL (one JSON object per line) for records and JSON for its manifest:
+
+- `manifest.json` declares `export_version` (currently `1`), the source and current-view database schema
+  versions, export time, per-file record counts, and each historical table's columns and foreign keys.
+- `collections.jsonl` includes every collection, its relative folder path, latest completed run ID
+  (null when none exists), and review warnings.
+- `pages.jsonl` includes pages from each latest completed run in reviewed order, with `page_id`,
+  `collection_id`, `run_id`, `document_id`, one-based `position`, `image_path`, extracted `analysis`
+  (including transcription), and the effective `boundary_before` (null for the first page).
+- `documents.jsonl` includes the effective reviewed groups, ordered `page_ids` and `image_paths`, labels,
+  summaries, dates, places, subjects, confidence, review indicators, and flags. `label_review` and
+  `grouping_review` match the browser indicators (including its 0.75 confidence threshold). `id` has the form
+  `collection_id:run_id:section`; it identifies a group in this export, and can change after review edits.
+  `original_document_id` refers to a stored document only when the group is unchanged; otherwise it is null.
+- `history/<table>.jsonl` contains **every row of every application table in the source snapshot**,
+  including earlier and unfinished runs, page analyses, prompts, caches, fingerprints, original documents,
+  review overrides, reviewed labels, flags, edit history, and undo snapshots. These files retain source
+  column names and SQLite values, including integer booleans and JSON strings in `*_json` columns.
+  The manifest describes primary keys and foreign keys. Parse JSON string columns separately if needed.
+
+Image paths use `/` separators and are relative to the input root originally passed to `analyze`.
+For example, `box-01/folder-02/scan_003.png` can be joined to the importing system's own image root.
+A root collection uses just the filename. In both collection exports, `input_directory` is normalized
+to `relative_path`; absolute source-directory locations are intentionally omitted. Historical page
+filenames and manifest filenames remain relative to their collection, so join them with that collection's
+`relative_path`. Free-text analyses, prompts, and history payloads are preserved verbatim, not scrubbed.
+Unsafe absolute or parent-traversing structured image paths cause export to fail.
+
+For a straightforward import, load collections, then documents and pages, joining on their explicit IDs.
+The top-level files describe the current reviewed state; the history files preserve provenance and all
+older records. Unfinished-only collections have no top-level pages or documents, but all their stored
+work is in history. For older archives, history retains the original schema while the current view uses
+the application's supported review logic. No importer into a particular external system is included.
