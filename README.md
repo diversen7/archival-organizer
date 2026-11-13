@@ -282,8 +282,9 @@ collection. Its header shows **✓ Done**, your name, and the completion time; *
 resume review. Status is visible to everyone browsing, while changing it requires a reviewer name.
 Completion and reopening are recorded in **Collection edits** and persist across browser restarts.
 
-Folder listings show progress such as **2 of 3 analyzed collections done**, becoming
-**✓ All 3 analyzed collections done** when every analyzed collection below that folder is done.
+Folder listings show a right-aligned progress column such as **2 of 3 done**, becoming
+**✓ 3 of 3 done** when every analyzed collection below that folder is done. Hover text and
+folder headers clarify that the counts cover analyzed collections.
 A folder containing its own images also counts as a collection and must be marked done separately
 from its subcollections. Only analyzed collections count: unprocessed source folders do not count
 until their analyses finish and they appear in the browser. Restart the browser to include newly

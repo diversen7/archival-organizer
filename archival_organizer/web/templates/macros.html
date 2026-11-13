@@ -44,18 +44,23 @@
 </nav>
 {%- endmacro %}
 
-{% macro completion_status(progress) -%}
+{% macro completion_status(progress, compact=false) -%}
 {% if progress and progress.collection_count %}
+{% if compact %}
+<span class="completion-status{% if progress.done_count == progress.collection_count %} is-done{% endif %}" title="{{ progress.done_count }} of {{ progress.collection_count }} analyzed collections done" aria-label="{{ progress.done_count }} of {{ progress.collection_count }} analyzed collections done">{% if progress.done_count == progress.collection_count %}✓ {% endif %}{{ progress.done_count }} of {{ progress.collection_count }} done</span>
+{% else %}
 <span class="completion-status{% if progress.done_count == progress.collection_count %} is-done{% endif %}">{% if progress.done_count == progress.collection_count %}✓ All {{ progress.collection_count }} analyzed {{ 'collection' if progress.collection_count == 1 else 'collections' }} done{% else %}{{ progress.done_count }} of {{ progress.collection_count }} analyzed {{ 'collection' if progress.collection_count == 1 else 'collections' }} done{% endif %}</span>
+{% endif %}
 {% endif %}
 {%- endmacro %}
 
 {% macro folder_list(children) -%}
-<div class="collection-list{% if children and children[0].edit_count is defined %} has-edit-counts{% endif %}">
+<div class="collection-list{% if children and children[0].edit_count is defined %} has-edit-counts{% endif %}{% if children and children[0].done_count is defined %} has-completion{% endif %}">
   {% for child in children %}
     <a class="collection" href="{{ child.url }}" data-search="{{ child.name.casefold() }}">
-      <div class="collection-name"><strong>{{ child.name }}</strong>{% if child.done_count is defined %}{{ completion_status(child) }}{% endif %}</div>
+      <div class="collection-name"><strong>{{ child.name }}</strong></div>
       <span class="collection-stats"><span>{{ child.page_count }} pages</span><span> · </span><span>{{ child.collection_count }} {{ 'collection' if child.collection_count == 1 else 'collections' }}</span>{% if child.edit_count is defined %}<span> · </span><span>{{ child.edit_count }} {{ 'edit' if child.edit_count == 1 else 'edits' }}</span>{% endif %}</span>
+      {% if child.done_count is defined %}{{ completion_status(child, compact=true) }}{% endif %}
     </a>
   {% endfor %}
 </div>

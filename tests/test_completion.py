@@ -67,29 +67,29 @@ def test_nested_progress_includes_own_images_and_only_analyzed_collections(tmp_p
         mark_done(output, "a")
         mark_done(output, "b")
         root = client.get("/archive/").text
-        assert "2 of 3 analyzed collections done" in root
-        assert "0 of 1 analyzed collection done" in root  # sibling path stays independent
+        assert "2 of 3 done" in _visible_text(root)
+        assert "0 of 1 done" in _visible_text(root)  # sibling path stays independent
         assert "pending" not in root
         own = client.get("/archive/box/").text
         assert "In progress · Images in this folder" in own
         assert "2 of 3 analyzed collections done" in own
         assert "All 1 analyzed collection done" in client.get("/archive/box/nested/").text
         own_run = mark_done(output, "own")
-        assert "All 3 analyzed collections done" in client.get("/archive/").text
+        assert "✓ 3 of 3 done" in _visible_text(client.get("/archive/").text)
         assert "All 3 analyzed collections done" in client.get("/archive/box/").text
         storage.set_collection_done(output, "own", False, "Alice", run_id=own_run)
-        assert "2 of 3 analyzed collections done" in client.get("/archive/").text
+        assert "2 of 3 done" in _visible_text(client.get("/archive/").text)
         mark_done(output, "own")
         child_run = load_run(output, collection_id="b").run_id
         client.post(f"/collections/b/review/completion/reopen?run_id={child_run}",
                     data={"reviewer_name": "Alice"})
-        assert "2 of 3 analyzed collections done" in client.get("/archive/").text
+        assert "2 of 3 done" in _visible_text(client.get("/archive/").text)
         assert "0 of 1 analyzed collection done" in client.get("/archive/box/nested/").text
         mark_done(output, "b")
 
     _add_sample_collection(output, pending, "pending", "box/pending")
     with TestClient(create_app(output)) as client:
-        assert "3 of 4 analyzed collections done" in client.get("/archive/").text
+        assert "3 of 4 done" in _visible_text(client.get("/archive/").text)
         assert "3 of 4 analyzed collections done" in client.get("/archive/box/").text
 
 
