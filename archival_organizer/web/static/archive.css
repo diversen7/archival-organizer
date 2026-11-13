@@ -218,8 +218,8 @@ pre { white-space: pre-wrap; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo
 .collections-main > p { color: var(--muted); margin: 0 0 28px; }
 .collection-list { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content max-content; gap: 10px 12px; }
 .collection-list.has-edit-counts { grid-template-columns: minmax(0, 1fr) repeat(5, max-content); }
-.collection-list.has-completion { grid-template-columns: minmax(0, 1fr) repeat(3, max-content) minmax(12ch, max-content); }
-.collection-list.has-edit-counts.has-completion { grid-template-columns: minmax(0, 1fr) repeat(5, max-content) minmax(12ch, max-content); }
+.collection-list.has-completion { grid-template-columns: minmax(0, 1fr) minmax(12ch, max-content) repeat(3, max-content); }
+.collection-list.has-edit-counts.has-completion { grid-template-columns: minmax(0, 1fr) minmax(12ch, max-content) repeat(5, max-content); }
 .collection { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; padding: 16px 18px; text-decoration: none; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
 .collection:hover { border-color: var(--accent-strong); background: var(--hover-card); }
 .collection-name { min-width: 0; overflow-wrap: anywhere; }
@@ -227,8 +227,8 @@ pre { white-space: pre-wrap; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo
 .collection span { color: var(--muted); white-space: nowrap; }
 .collection .collection-stats { display: grid; grid-template-columns: subgrid; grid-column: 2 / -1; text-align: right; font-variant-numeric: tabular-nums; }
 .completion-status { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
-.has-completion .collection-stats { grid-column: 2 / -2; }
-.collection > .completion-status { grid-column: -2 / -1; text-align: right; font-variant-numeric: tabular-nums; }
+.has-completion .collection-stats { grid-column: 3 / -1; }
+.collection > .completion-status { grid-column: 2; text-align: right; font-variant-numeric: tabular-nums; }
 .completion-status.is-done, .collection .completion-status.is-done { color: var(--accent-strong); }
 .collection-completion { display: grid; gap: 5px; margin: 12px 0 20px; }
 .collection-completion > span { font-size: 13px; color: var(--muted); }
