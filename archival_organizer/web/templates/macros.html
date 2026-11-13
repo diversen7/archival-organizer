@@ -60,7 +60,7 @@
     <a class="collection" href="{{ child.url }}" data-search="{{ child.name.casefold() }}">
       <div class="collection-name"><strong>{{ child.name }}</strong></div>
       {% if child.done_count is defined %}{{ completion_status(child, compact=true) }}{% endif %}
-      <span class="collection-stats"><span>{{ child.page_count }} pages</span><span> · </span><span>{{ child.collection_count }} {{ 'collection' if child.collection_count == 1 else 'collections' }}</span>{% if child.edit_count is defined %}<span> · </span><span>{{ child.edit_count }} {{ 'edit' if child.edit_count == 1 else 'edits' }}</span>{% endif %}</span>
+      <span class="collection-stats">{% if child.done_count is defined %}<span class="completion-separator"> · </span>{% endif %}<span>{{ child.page_count }} pages</span><span> · </span><span>{{ child.collection_count }} {{ 'collection' if child.collection_count == 1 else 'collections' }}</span>{% if child.edit_count is defined %}<span> · </span><span>{{ child.edit_count }} {{ 'edit' if child.edit_count == 1 else 'edits' }}</span>{% endif %}</span>
     </a>
   {% endfor %}
 </div>
