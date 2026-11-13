@@ -351,6 +351,8 @@ def save_results(
             "UPDATE analysis_runs SET completed_at = ? WHERE id = ?",
             (_now(), run_id),
         )
+        if _latest_completed_run(database, collection_id) == run_id:
+            _reopen_completion(database, collection_id, "System", "A new analysis replaced the reviewed content.")
 
 
 def _latest_completed_run(database: sqlite3.Connection, collection_id: str) -> int | None:
@@ -668,6 +670,69 @@ def _append_edit(
         ) VALUES (?, ?, ?, ?, ?, ?)""",
         (collection_id, reviewer_name, action, summary, json.dumps(details, ensure_ascii=False), _now()),
     )
+    if action in {"split", "join", "move", "undo", "label", "flag", "unflag"}:
+        _reopen_completion(database, collection_id, reviewer_name, "Review changes were made after marking done.")
+
+
+def _reopen_completion(
+    database: sqlite3.Connection, collection_id: str, reviewer_name: str, reason: str,
+) -> None:
+    # Migration fixtures and older archive exports can still use pre-v9 storage.
+    if database.execute("SELECT 1 FROM sqlite_master WHERE name = 'collection_completion'").fetchone() is None:
+        return
+    previous = database.execute(
+        "SELECT * FROM collection_completion WHERE collection_id = ? AND completed_at IS NOT NULL",
+        (collection_id,),
+    ).fetchone()
+    if previous is None:
+        return
+    database.execute(
+        """UPDATE collection_completion SET completed_at = NULL, completed_by = NULL,
+        reopen_reason = ? WHERE collection_id = ?""", (reason, collection_id),
+    )
+    _append_edit(database, collection_id, reviewer_name, "reopen", f"Reopened collection: {reason}",
+                 {"before": dict(previous), "reason": reason})
+
+
+def load_collection_completions(output_dir: Path) -> dict[str, dict[str, Any]]:
+    with connect(output_dir) as database:
+        return {row["collection_id"]: dict(row) for row in database.execute(
+            "SELECT * FROM collection_completion"
+        )}
+
+
+def set_collection_done(
+    output_dir: Path, collection_id: str, done: bool, reviewer_name: str, *, run_id: int,
+) -> None:
+    """Save an explicit, idempotent completion action and its history atomically."""
+    reviewer_name = reviewer_name.strip()
+    if not reviewer_name or len(reviewer_name) > 100:
+        raise ValueError("Enter a reviewer name (1–100 characters) before making edits")
+    with connect(output_dir) as database:
+        database.execute("BEGIN IMMEDIATE")
+        latest = _latest_completed_run(database, collection_id)
+        if latest is None:
+            raise ValueError("Completed collection not found")
+        if latest != run_id:
+            raise ValueError("The analysis has changed. Restart the browser and review the latest analysis before marking done.")
+        if not done:
+            _reopen_completion(database, collection_id, reviewer_name, "Reopened for further review.")
+            return
+        previous = database.execute(
+            "SELECT * FROM collection_completion WHERE collection_id = ?", (collection_id,),
+        ).fetchone()
+        if previous is not None and previous["completed_at"] is not None and previous["run_id"] == run_id:
+            return
+        completed_at = _now()
+        database.execute(
+            """INSERT INTO collection_completion(collection_id, run_id, completed_at, completed_by)
+            VALUES (?, ?, ?, ?) ON CONFLICT(collection_id) DO UPDATE SET
+                run_id = excluded.run_id, completed_at = excluded.completed_at,
+                completed_by = excluded.completed_by, reopen_reason = ''""",
+            (collection_id, run_id, completed_at, reviewer_name),
+        )
+        _append_edit(database, collection_id, reviewer_name, "done", "Marked collection as done",
+                     {"run_id": run_id, "completed_at": completed_at})
 
 
 def load_edit_history(output_dir: Path, collection_id: str) -> list[dict[str, Any]]:

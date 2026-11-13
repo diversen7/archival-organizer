@@ -71,6 +71,40 @@ def test_fresh_and_migrated_archives_have_identical_schema(version_four_archive,
     assert schema(fresh) == schema(version_four_archive)
 
 
+def test_v9_upgrade_preserves_v8_analysis_reviews_flags_and_history(version_four_archive, monkeypatch):
+    output = version_four_archive
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "SCHEMA_VERSION", 8)
+        storage.initialize(output)
+    storage.set_document_flag(output, "default", [1], True, "Alice")
+    storage.move_page_after(output, "default", 1, 2, "Alice")
+    before = storage.load_collection_data(output, "default")
+    history = storage.load_edit_history(output, "default")
+    storage.initialize(output)
+    storage.initialize(output)
+    assert storage.load_collection_data(output, "default") == before
+    assert storage.load_edit_history(output, "default") == history
+    assert storage.load_document_flags(output, "default") == {1}
+    assert storage.load_collection_completions(output) == {}
+    with storage.connect(output) as database:
+        assert database.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()[0] == "9"
+        assert database.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_v9_upgrade_rolls_back_schema_version_and_data(version_four_archive, monkeypatch):
+    output = version_four_archive
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "SCHEMA_VERSION", 8)
+        storage.initialize(output)
+    before = _dump(output)
+    monkeypatch.setitem(migrations.MIGRATIONS, 8, migrations.MIGRATIONS[8] + (
+        "UPDATE page_analyses SET result_json = '{}'", "INSERT INTO nonexistent_table VALUES (1)",
+    ))
+    with pytest.raises(sqlite3.OperationalError, match="nonexistent_table"):
+        storage.initialize(output)
+    assert _dump(output) == before
+
+
 def test_v5_upgrade_preserves_results_and_boundary_cache(version_four_archive):
     output = version_four_archive
     with storage.connect(output) as database:

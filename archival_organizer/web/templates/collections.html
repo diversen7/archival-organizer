@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import breadcrumb, folder_list %}
+{% from "macros.html" import breadcrumb, folder_list, completion_status %}
 
 {% block title %}{{ folder_title }} · {{ 'Preview' if preview_mode else 'Archive browser' }}{% endblock %}
 {% block body_class %}collections-page{% endblock %}
@@ -10,6 +10,7 @@
   {% include "browser_controls.html" %}
   {% if preview_mode and not browser_controls %}<p><span class="preview-badge">Preview</span></p>{% endif %}
   <h1>{{ folder_title }}</h1>
+  {% if completion_progress %}<p class="folder-completion">{{ completion_status(completion_progress) }}</p>{% endif %}
   {% if notice %}
     <div class="card browser-notice" role="status">
       <p>{{ notice }}</p>

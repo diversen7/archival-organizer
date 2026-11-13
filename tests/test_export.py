@@ -28,6 +28,7 @@ def test_complete_export_preserves_history_and_reviews(collection_archive, tmp_p
     storage.set_boundary_override(output, cid, 2, True, reviewer_name="Åse")
     data = storage.load_collection_data(output, cid)
     storage.set_document_flag(output, cid, [data['pages'][1]['page_id']], True, "Åse")
+    storage.set_collection_done(output, cid, True, "Åse", run_id=data['run_id'])
     # Include an unfinished run and a collection with no completed analysis.
     storage.start_run(output, cid, 'unfinished-model', 'key', {})
     storage.upsert_collection(output, 'empty', 'Empty', 'empty', source / 'empty')
@@ -56,6 +57,11 @@ def test_complete_export_preserves_history_and_reviews(collection_archive, tmp_p
     collections = read_rows(destination, 'collections')
     assert next(c for c in collections if c['id'] == 'empty')['latest_completed_run_id'] is None
     assert all(c['input_directory'] == c['relative_path'] for c in collections)
+    completion = next(c for c in collections if c['id'] == cid)['completion']
+    assert completion['completed_by'] == 'Åse'
+    assert completion['completed_at']
+    assert completion['run_id'] == data['run_id']
+    assert read_rows(destination, 'history/collection_completion') == [completion]
     pages = read_rows(destination, 'pages')
     assert {p['image_path'] for p in pages} == {
         f'{folder}/{n}.png' for folder in ('dir1', 'dir1/child', 'dir2') for n in (1, 2)

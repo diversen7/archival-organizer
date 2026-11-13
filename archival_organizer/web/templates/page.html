@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import field, review_form, section_link, breadcrumb, folder_list, image_viewer, sidebar_toggle %}
+{% from "macros.html" import field, review_form, section_link, breadcrumb, folder_list, image_viewer, sidebar_toggle, completion_status %}
 
 {% block title %}Page {{ page_number }} · Archive browser{% endblock %}
 {% block navigation_toggle %}{{ sidebar_toggle() }}{% endblock %}
@@ -26,6 +26,12 @@
 
   <main data-previous-url="{{ previous_url or '' }}" data-next-url="{{ next_url or '' }}">
     {% if breadcrumbs %}{{ breadcrumb(breadcrumbs) }}{% endif %}
+    <div class="collection-completion" role="status">
+      <strong class="completion-status{% if collection_done %} is-done{% endif %}">{{ '✓ Done' if collection_done else 'In progress' }} · Images in this folder</strong>
+      {% if collection_done %}<span>Marked done by {{ completion.completed_by }} · <time datetime="{{ completion.completed_at }}">{{ completion.completed_at[:10] }} {{ completion.completed_at[11:16] }} UTC</time></span>
+      {% elif completion and completion.reopen_reason %}<span>{{ completion.reopen_reason }}</span>{% endif %}
+      {% if children %}{{ completion_status(completion_progress) }}{% endif %}
+    </div>
     {% if children %}
       <details class="child-folders" data-disclosure="subfolders" open>
         <summary>Subfolders</summary>
@@ -75,6 +81,10 @@
               </div>
             </form>
             <div id="reviewer-tools" hidden>
+            <div class="review-actions review-row completion-actions">
+              {{ review_form(completion_url, 'Reopen' if collection_done else 'Mark as done', collection_done) }}
+            </div>
+            {% if children %}<p class="review-note">This action applies to the images in this folder. Subcollections are marked done separately.</p>{% endif %}
             <div class="review-actions review-row flag-actions">
               {{ review_form(flag_url, 'Remove flag' if section.flagged else 'Flag') }}
               {{ review_form(undo_url, 'Undo last adjustment', true, not run.can_undo) }}

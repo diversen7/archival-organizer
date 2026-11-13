@@ -25,6 +25,7 @@ def test_finished_collection_is_untouched_by_new_model_and_prompt(archive, monke
     storage.set_boundary_override(output, 'default', 2, True)
     storage.move_page_after(output, 'default', 2, 4)
     before = storage.load_collection_data(output, 'default')
+    storage.set_collection_done(output, 'default', True, 'Alice', run_id=before['run_id'])
     export = output / 'sections.csv'
     export_before = (export.read_bytes(), export.stat().st_mtime_ns)
     with storage.connect(output) as db:

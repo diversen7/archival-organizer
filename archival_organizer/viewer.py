@@ -426,6 +426,8 @@ def _page_context(
             "confidence_label": f'{float(boundary.get("confidence", 0)):.0%}',
             "reason": boundary.get("reason"),
         }
+    completion = storage.load_collection_completions(run.output_dir).get(run.collection_id)
+    collection_done = bool(completion and completion["completed_at"] and completion["run_id"] == run.run_id)
     return {
         "run": run,
         "page": page,
@@ -440,6 +442,10 @@ def _page_context(
         "confidence_label": f'{float(page.get("extraction_confidence", 0)):.0%}',
         "metadata": [{"label": label, "value": value} for label, value in metadata],
         "review_actions": review_actions,
+        "completion": completion,
+        "collection_done": collection_done,
+        "completion_url": f"{content_url}/review/completion/{'reopen' if collection_done else 'done'}"
+                          f"?run_id={run.run_id}&page={page_number}",
         "flag_url": f"{content_url}/review/pages/{page_number}/{'unflag' if section['flagged'] else 'flag'}",
         "undo_url": f"{content_url}/review/undo?page={page_number}",
         "history_url": f"{content_url}/history",
@@ -516,6 +522,15 @@ def _folder_context(
     collections: list[ArchiveCollection], relative_path: str = "."
 ) -> dict[str, Any]:
     """Derive navigation from completed collections, including image-free ancestors."""
+    completions = {
+        output: storage.load_collection_completions(output)
+        for output in {collection.run.output_dir for collection in collections}
+    }
+    done_paths = set()
+    for collection in collections:
+        completion = completions[collection.run.output_dir].get(collection.collection_id)
+        if completion and completion["completed_at"] and completion["run_id"] == collection.run.run_id:
+            done_paths.add(collection.relative_path)
     return _navigation_context(
         {collection.relative_path: collection.run.page_count for collection in collections},
         relative_path,
@@ -523,12 +538,14 @@ def _folder_context(
             collection.relative_path: len(_load_collection_history(collection.run.output_dir, collection.collection_id))
             for collection in collections
         },
+        done_paths=done_paths,
     )
 
 
 def _navigation_context(
     page_counts: Mapping[str, int], relative_path: str = ".", prefix: str = "/archive",
     *, edit_counts: Mapping[str, int] | None = None,
+    done_paths: set[str] | None = None,
 ) -> dict[str, Any]:
     """Build the same folder navigation for database and filesystem catalogs."""
     parent = PurePosixPath(relative_path)
@@ -536,9 +553,14 @@ def _navigation_context(
     for index, part in enumerate(parent.parts, start=1):
         crumbs.append({"label": part, "url": _archive_url("/".join(parent.parts[:index]), prefix)})
     children: dict[str, dict[str, Any]] = {}
+    total = done_count = 0
     for collection_path, page_count in page_counts.items():
         path = PurePosixPath(collection_path)
-        if path == parent or not path.is_relative_to(parent):
+        if not path.is_relative_to(parent):
+            continue
+        total += 1
+        done_count += int(done_paths is not None and collection_path in done_paths)
+        if path == parent:
             continue
         name = path.relative_to(parent).parts[0]
         child = children.setdefault(name, {
@@ -549,12 +571,15 @@ def _navigation_context(
         })
         child["page_count"] += page_count
         child["collection_count"] += 1
+        if done_paths is not None:
+            child["done_count"] = child.get("done_count", 0) + int(collection_path in done_paths)
         if edit_counts is not None:
             child["edit_count"] = child.get("edit_count", 0) + edit_counts.get(collection_path, 0)
     return {
         "breadcrumbs": crumbs,
         "folder_title": parent.name if parent.parts else "Archive Top",
         "children": sorted(children.values(), key=lambda item: natural_key(Path(item["name"]))),
+        "completion_progress": {"done_count": done_count, "collection_count": total} if done_paths is not None else None,
     }
 
 
@@ -791,6 +816,29 @@ def create_app(output_dir: Path, input_dir: Path | None = None) -> FastAPI:
             collection=collection, back_url=_archive_url(collection.relative_path),
             edits=_load_collection_history(collection.run.output_dir, collection_id),
         )
+
+    def change_completion(collection_id: str, done: bool, run_id: int, page: int, reviewer_name: str) -> RedirectResponse:
+        with lock:
+            collection = selected(collection_id)
+            try:
+                storage.set_collection_done(output_dir, collection_id, done, reviewer_name, run_id=run_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            return page_redirect(collection, page)
+
+    @app.post("/collections/{collection_id}/review/completion/done")
+    def collection_done(
+        collection_id: str, run_id: int = Query(ge=1), page: int = Query(default=1, ge=1),
+        reviewer_name: str = Depends(require_reviewer),
+    ) -> RedirectResponse:
+        return change_completion(collection_id, True, run_id, page, reviewer_name)
+
+    @app.post("/collections/{collection_id}/review/completion/reopen")
+    def collection_reopen(
+        collection_id: str, run_id: int = Query(ge=1), page: int = Query(default=1, ge=1),
+        reviewer_name: str = Depends(require_reviewer),
+    ) -> RedirectResponse:
+        return change_completion(collection_id, False, run_id, page, reviewer_name)
 
     @app.post("/collections/{collection_id}/review/boundaries/{right_page}/split")
     def collection_split(collection_id: str, right_page: int, reviewer_name: str = Depends(require_reviewer)) -> RedirectResponse:

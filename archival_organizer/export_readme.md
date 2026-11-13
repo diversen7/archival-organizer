@@ -22,6 +22,12 @@ incorporate human review changes. A collection with `latest_completed_run_id: nu
 has no completed analysis and can legitimately have no current pages or documents.
 Its unfinished work is still preserved in history.
 
+Each collection's `completion` is null until it has been marked done. Otherwise it contains
+the reviewed `run_id`, `completed_at`, `completed_by`, and `reopen_reason`. A non-null
+`completed_at` indicates Done for that analysis; reopening clears `completed_at` and
+`completed_by` and records the reason. Folder completion is derived from all analyzed
+collections at or beneath that path, including the folder's own collection when present.
+
 Documents and pages reference `collections.id` through `collection_id`. A page's
 `document_id` references `documents.id`. Each document's `page_ids` and `image_paths`
 are ordered lists. A page's `position` is one-based within its collection's reviewed

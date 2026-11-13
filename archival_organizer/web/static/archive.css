@@ -220,9 +220,16 @@ pre { white-space: pre-wrap; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo
 .collection-list.has-edit-counts { grid-template-columns: minmax(0, 1fr) repeat(5, max-content); }
 .collection { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; padding: 16px 18px; text-decoration: none; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
 .collection:hover { border-color: var(--accent-strong); background: var(--hover-card); }
-.collection strong { font-weight: 600; overflow-wrap: anywhere; }
+.collection-name { min-width: 0; overflow-wrap: anywhere; }
+.collection strong { font-weight: 600; }
 .collection span { color: var(--muted); white-space: nowrap; }
 .collection .collection-stats { display: grid; grid-template-columns: subgrid; grid-column: 2 / -1; text-align: right; font-variant-numeric: tabular-nums; }
+.completion-status { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
+.collection .completion-status { white-space: normal; margin-top: 5px; }
+.completion-status.is-done, .collection .completion-status.is-done { color: var(--accent-strong); }
+.collection-completion { display: grid; gap: 5px; margin: 12px 0 20px; }
+.collection-completion > span { font-size: 13px; color: var(--muted); }
+.collection-completion > strong { font-size: 15px; }
 .breadcrumbs { margin-bottom: 20px; }
 .breadcrumbs ol { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .breadcrumbs li { overflow-wrap: anywhere; }
@@ -263,7 +270,7 @@ pre { white-space: pre-wrap; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo
   .collections-main { padding-top: 32px; }
   .collection-list { grid-template-columns: max-content max-content minmax(0, 1fr); column-gap: 6px; }
   .collection-list.has-edit-counts { grid-template-columns: max-content max-content max-content max-content minmax(0, 1fr); }
-  .collection strong { grid-column: 1 / -1; }
+  .collection-name { grid-column: 1 / -1; }
   .collection .collection-stats { grid-column: 1 / -1; margin-top: 4px; text-align: left; }
 }
 

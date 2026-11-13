@@ -115,7 +115,7 @@ its surrounding batch and focused review. Labels are reused for documents with t
 independently of their absolute page numbers. Changing one collection does not reopen other completed
 collections. Stage records retain the model that actually produced each reused result.
 
-Existing version 4–7 archives upgrade transactionally to version 8. On the first analysis command,
+Existing version 4–8 archives upgrade transactionally to version 9. On the first analysis command,
 completed collections with the same ordered filenames gain fingerprints of their current images and
 are skipped, without any model requests. This establishes a baseline under the assumption that their
 images have not changed since analysis; it cannot detect replacements made before fingerprints existed.
@@ -277,6 +277,24 @@ snapshots recover individual grouping adjustments and page moves where possible.
 show the recovered page order. Earlier removed flags and undone changes whose records were deleted
 cannot be recovered.
 
+Select **Mark as done** in the review controls when you have finished reviewing the images in a
+collection. Its header shows **✓ Done**, your name, and the completion time; **Reopen** lets you
+resume review. Status is visible to everyone browsing, while changing it requires a reviewer name.
+Completion and reopening are recorded in **Collection edits** and persist across browser restarts.
+
+Folder listings show progress such as **2 of 3 analyzed collections done**, becoming
+**✓ All 3 analyzed collections done** when every analyzed collection below that folder is done.
+A folder containing its own images also counts as a collection and must be marked done separately
+from its subcollections. Only analyzed collections count: unprocessed source folders do not count
+until their analyses finish and they appear in the browser. Restart the browser to include newly
+analyzed collections; a newly included collection starts in progress.
+
+Grouping changes, page moves, Undo, regenerated labels, and flag changes automatically reopen a
+done collection. A new completed analysis also reopens it; a failed or unfinished analysis does not
+replace the reviewed analysis. The header explains why it reopened, and the history records the
+change. Browsing and analysis commands that skip unchanged content preserve Done. Completion is
+independent of grouping Undo: undoing an edit does not restore a previous Done status.
+
 Use the sun/moon switch under **Appearance** at the top of any browser page to toggle light and dark.
 Your device's colour preference is the default, including changes while browsing.
 An explicit choice is remembered on this device; use the monitor icon to follow the system again. Scanned images
@@ -293,15 +311,15 @@ Undo actions and each individual entry recovered from imported history, matching
 after saving an edit.
 A folder such as
 `91+01011-3` appears as a top-level entry even if its images are all in child collections. Click through
-folders to reach a collection; folder lists can be filtered by name and show totals for completed
+folders to reach a collection; folder lists can be filtered by name and show totals for analyzed
 collections beneath each entry. Breadcrumbs such as **Archive Top / 91+01011-3 / part1** link to ancestors.
 Page URLs use relative folder paths, for example `/archive/91%2B01011-3/part1/?page=12`; special characters
 are URL-encoded while breadcrumbs show the original names. Old collection-ID links redirect to these URLs.
 
 A folder with its own images shows its page viewer together with links to subfolders. If the input root
 itself contains an analyzed collection, its pages appear at `/archive/`. The hierarchy is derived from
-completed collections: empty and unprocessed folders do not appear. Existing archives need no reanalysis
-to use this view; restart `archival-browser` to include newly completed collections. Keep source folder paths
+collections with completed analyses: empty and unprocessed folders do not appear. Existing archives need no reanalysis
+to use this view; restart `archival-browser` to include newly analyzed collections. Keep source folder paths
 stable, since renaming them changes both readable URLs and the analyzer's path-derived collection IDs.
 
 The section list distinguishes **Label review** (uncertain or stale section metadata) from **Grouping
@@ -369,8 +387,8 @@ The UTF-8 bundle uses JSONL (one JSON object per line) for records and JSON for 
   recipient the entire export folder and ask them to start with its `README.md`.
 - `manifest.json` declares `export_version` (currently `1`), the source and current-view database schema
   versions, export time, per-file record counts, and each historical table's columns and foreign keys.
-- `collections.jsonl` includes every collection, its relative folder path, latest completed run ID
-  (null when none exists), and review warnings.
+- `collections.jsonl` includes every collection, its relative folder path, completion status,
+  latest completed run ID (null when none exists), and review warnings.
 - `pages.jsonl` includes pages from each latest completed run in reviewed order, with `page_id`,
   `collection_id`, `run_id`, `document_id`, one-based `position`, `image_path`, extracted `analysis`
   (including transcription), and the effective `boundary_before` (null for the first page).

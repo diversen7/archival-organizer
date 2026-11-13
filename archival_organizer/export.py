@@ -125,6 +125,7 @@ def _current(
                 "SELECT collection_id, MAX(id) AS run_id FROM analysis_runs "
                 "WHERE completed_at IS NOT NULL GROUP BY collection_id"
             )}
+        completions = storage.load_collection_completions(snapshot)
         for index, collection in enumerate(collections, start=1):
             collection_id = collection["id"]
             relative = _relative_path(collection["relative_path"])
@@ -133,6 +134,7 @@ def _current(
             run_id = latest.get(collection_id)
             data = storage.load_collection_data(snapshot, collection_id) if run_id is not None else None
             write("collections", dict(collection, latest_completed_run_id=run_id,
+                                      completion=completions.get(collection_id),
                                       review_warnings=data["review_warnings"] if data else []))
             if data is None:
                 progress()
